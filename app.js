@@ -34,11 +34,20 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(helmet({
     crossOriginResourcePolicy: false,
 }));
+const allowedOrigins = ['https://autentic.ec', 'https://app.autentic.ec'];
+
 app.use(cors({
-  origin: 'https://autentic.ec',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Origen no permitido por CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
+
 
 // Middleware para procesar JSON
 app.use(express.json());
