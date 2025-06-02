@@ -9,6 +9,21 @@ const createOficina = catchError(async (req, res) => {
 });
 
 // Obtener todas las oficinas con sus rutas
+const getAll = catchError(async (req, res) => {
+
+  const { role } = req.user;
+
+  // Validar rol
+  if (role !== 'administrador' && role !== 'administrador_oficina') {
+    return res.status(403).json({ message: 'No tiene permisos para acceder a esta información.' });
+  }
+
+  const oficinas = await Oficina.getAllWithRutas();
+
+  return res.status(200).json(oficinas);
+});
+
+// Obtener todas las oficinas con sus rutas
 const getAllOficinas = catchError(async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * parseInt(limit);
@@ -91,5 +106,6 @@ module.exports = {
   getOficinaById,
   updateOficina,
   deleteOficina,
-  searchByName
+  searchByName,
+  getAll
 };

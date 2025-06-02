@@ -1,5 +1,6 @@
 // models/config.js
 const pool = require('../config/db'); // Importar la conexión a la base de datos
+const Ruta = require('./ruta')
 
 const Config = {
   // Obtener todas las categorías de egresos
@@ -70,8 +71,8 @@ const Config = {
     }
   },
 
-   // Actualizar una categoría de egreso
-   updateConfigCaja: async (timeClose, timeOpen, timeGasto) => {
+  // Actualizar una categoría de egreso
+  updateConfigCaja: async (timeClose, timeOpen, timeGasto) => {
     try {
       const query = 'UPDATE config_Caja SET hora_cierre_caja = $1, hora_apertura_caja = $2, hora_gastos = $3 WHERE id = 1 RETURNING *';
       const values = [timeClose, timeOpen, timeGasto];
@@ -252,7 +253,7 @@ const Config = {
       totalItems,
       totalPages
     };
-  },  
+  },
 
   // Función para actualizar la configuración de crédito de una ruta
   updateRutaConfig: async (rutaId, configData) => {

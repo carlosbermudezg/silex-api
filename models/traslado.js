@@ -12,13 +12,12 @@ const Traslado = {
       motivo_traslado,
       user_create
     } = data;
-
+  
     const client = await pool.connect();
-
+  
     try {
       await client.query('BEGIN');
-
-      // 1. Insertar registros en traslado_clientes
+  
       const insertQuery = `
         INSERT INTO traslado_clientes (
           oficina_origen_id,
@@ -30,36 +29,40 @@ const Traslado = {
           user_create,
           created_at,
           updated_at
-        ) VALUES 
-        ${cliente_ids.map((_, i) => `($1, $2, $${i + 3}, $${cliente_ids.length + 3}, $${cliente_ids.length + 4}, $${cliente_ids.length + 5}, $${cliente_ids.length + 6}, NOW(), NOW())`).join(',')}
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, NOW(), NOW()
+        )
         RETURNING *;
       `;
-
-      const insertValues = [
-        oficina_origen_id,
-        ruta_origen_id,
-        ...cliente_ids,
-        oficina_destino_id,
-        ruta_destino_id,
-        motivo_traslado,
-        user_create
-      ];
-
-      const insertResult = await client.query(insertQuery, insertValues);
-
-      // 2. Actualizar el campo rutaId de los clientes trasladados
+  
+      const insertResults = [];
+  
+      for (const cliente_id of cliente_ids) {
+        const result = await client.query(insertQuery, [
+          oficina_origen_id,
+          ruta_origen_id,
+          cliente_id,
+          oficina_destino_id,
+          ruta_destino_id,
+          motivo_traslado,
+          user_create
+        ]);
+        insertResults.push(result.rows[0]);
+      }
+  
+      // Actualizar todos los clientes trasladados
       const updateQuery = `
         UPDATE clientes
         SET "rutaId" = $1
         WHERE id = ANY($2::int[])
       `;
-
+  
       await client.query(updateQuery, [ruta_destino_id, cliente_ids]);
-
+  
       await client.query('COMMIT');
-
-      return insertResult.rows;
-
+  
+      return insertResults;
+  
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Error en traslado masivo de clientes', error);

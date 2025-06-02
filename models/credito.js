@@ -1,7 +1,7 @@
 const db = require('../config/db');
 const Caja = require('./caja');
 const Cliente = require('./cliente');
-const Config = require('./config')
+const Config = require('./config');
 
 const Credito = {
   // Crear un crédito
@@ -367,6 +367,7 @@ const Credito = {
           'coordenadasCasa', cl."coordenadasCasa",
           'coordenadasCobro', cl."coordenadasCobro",
           'identificacion', cl.identificacion,
+          'rutaId', cl."rutaId",
           'fotos', (
             SELECT COALESCE(json_agg(foto.foto), '[]'::json)
             FROM fotoclientes foto
@@ -387,7 +388,8 @@ const Credito = {
               'estado', q.estado,
               'creditoId', q."creditoId",
               'createdAt', q."createdAt",
-              'updatedAt', q."updatedAt"
+              'updatedAt', q."updatedAt",
+              'monto_pagado', q."monto_pagado"
             )
           ), '[]'::json)
           FROM cuotas q
@@ -400,14 +402,29 @@ const Credito = {
               'monto', pa.monto,
               'fechaPago', pa."createdAt",
               'metodoPago', pa."metodoPago",
-              'cuotaId', pa."cuotaId",
               'createdAt', pa."createdAt",
-              'updatedAt', pa."updatedAt"
+              'updatedAt', pa."updatedAt",
+              'cuotas', (
+                SELECT json_agg(
+                  json_build_object(
+                    'cuotaId', pc."cuotaId",
+                    'monto_abonado', pc."monto_abonado",
+                    'capital_pagado', pc."capital_pagado",
+                    'interes_pagado', pc."interes_pagado",
+                    'created_at', pc."created_at"
+                  )
+                )
+                FROM pagos_cuotas pc
+                WHERE pc."pagoId" = pa.id
+              )
             )
           ), '[]'::json)
           FROM pagos pa
-          WHERE pa."cuotaId" IN (
-            SELECT id FROM cuotas WHERE "creditoId" = c.id
+          WHERE pa.id IN (
+            SELECT DISTINCT pc."pagoId"
+            FROM cuotas q
+            JOIN pagos_cuotas pc ON q.id = pc."cuotaId"
+            WHERE q."creditoId" = c.id
           )
         ) AS pagos
       FROM creditos c
@@ -420,7 +437,7 @@ const Credito = {
   
     const result = await db.query(query, [usuarioId, limit, offset]);
     return result.rows;
-  },
+  },  
 
   //Contar los impagos por usuario
   countImpagosByUsuario : async (usuarioId) => {

@@ -292,6 +292,21 @@ const Cliente = {
     };
   },
 
+  // Obtener clientes por ruta con paginación y búsqueda solo por nombre
+  getByRutaId2: async (rutaId) => {
+  
+    let queryText = `
+      SELECT * FROM clientes
+      WHERE "rutaId" = $1 AND estado != 'archivado'
+    `;
+    let queryParams = [rutaId];
+  
+    // Ejecutar la consulta de resultados
+    const result = await db.query(queryText, queryParams);
+  
+    return result.rows
+  },
+
   // Obtener todos los clientes de una oficina específica con paginación
   getClientesByOficinaId: async (oficinaId = 1, page, limit, offset) => {
     const queryText = `

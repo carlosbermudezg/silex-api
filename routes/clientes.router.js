@@ -25,6 +25,9 @@ router.put('/:id', verifyToken, clienteController.updateCliente);
 router.put('/:id/archive', verifyToken, clienteController.archiveCliente);
 
 // Obtener clientes por ruta
+router.get('/ruta-wo/:rutaId', verifyToken, clienteController.getClientesByRuta2);
+
+// Obtener clientes por ruta
 router.get('/ruta/:rutaId', verifyToken, clienteController.getClientesByRuta);
 
 // Obtener clientes por oficina

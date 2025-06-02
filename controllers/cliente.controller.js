@@ -106,6 +106,15 @@ const getClientesByRuta = catchError(async (req, res) => {
   return res.status(200).json(clientes);
 });
 
+// Controlador para obtener clientes por ruta sin paginación
+const getClientesByRuta2 = catchError(async (req, res) => {
+  const { rutaId } = req.params;
+
+  const clientes = await Cliente.getByRutaId2(rutaId);  // Llamamos al método de paginación por ruta
+
+  return res.status(200).json(clientes);
+});
+
 // Controlador para obtener clientes por oficina con paginación
 const getClientesByOficina = catchError(async (req, res) => {
   const { oficinaId } = req.params;
@@ -164,5 +173,6 @@ module.exports = {
   getClientesByOficina,
   searchClientes,
   getArchivedClientes,
-  updateCliente
+  updateCliente,
+  getClientesByRuta2
 };

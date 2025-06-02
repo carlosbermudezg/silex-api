@@ -25,13 +25,35 @@ const getTrasladosClientesPaginados = catchError(async (req, res) => {
 });
 
 const createClienteTrasladoMasivo = catchError(async (req, res) => {
-  const trasladoData = req.body;
+  const {
+    oficina_origen_id,
+    ruta_origen_id,
+    cliente_ids,
+    oficina_destino_id,
+    ruta_destino_id,
+    motivo_traslado
+  } = req.body;
 
-  if (!Array.isArray(trasladoData.cliente_ids) || trasladoData.cliente_ids.length === 0) {
+  const user_create = req.user.userId;
+  console.log(req)
+
+  if (!Array.isArray(cliente_ids) || cliente_ids.length === 0) {
     return res.status(400).json({ message: 'Debe proporcionar al menos un cliente para trasladar.' });
   }
 
-  const traslados = await Traslado.createClienteTrasladoMasivo(trasladoData);
+  if (!oficina_origen_id || !ruta_origen_id || !oficina_destino_id || !ruta_destino_id || !motivo_traslado || !user_create) {
+    return res.status(400).json({ message: 'Faltan campos obligatorios.' });
+  }
+
+  const traslados = await Traslado.createClienteTrasladoMasivo({
+    oficina_origen_id,
+    ruta_origen_id,
+    cliente_ids,
+    oficina_destino_id,
+    ruta_destino_id,
+    motivo_traslado,
+    user_create
+  });
 
   return res.status(201).json({ message: 'Traslados registrados exitosamente', traslados });
 });

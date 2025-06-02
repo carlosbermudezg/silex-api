@@ -23,6 +23,49 @@ const Oficina = {
     return oficina;
   },
 
+  // Obtener todas las oficinas con rutas
+  getAllWithRutas: async () => {
+
+    const queryText = `
+      SELECT 
+        o.*, 
+        r.id AS "rutaId", 
+        r.nombre AS "rutaNombre"
+      FROM oficinas o
+      LEFT JOIN ruta r ON o.id = r."oficinaId"
+      ORDER BY o."createdAt" DESC;
+    `;
+
+    const { rows } = await db.query(queryText);
+
+    const oficinasMap = {};
+
+    rows.forEach((row) => {
+      if (!oficinasMap[row.id]) {
+        oficinasMap[row.id] = {
+          id: row.id,
+          nombre: row.nombre,
+          direccion: row.direccion,
+          telefono: row.telefono,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          rutas: [],
+        };
+      }
+
+      if (row.rutaId && !oficinasMap[row.id].rutas.some(r => r.id === row.rutaId)) {
+        oficinasMap[row.id].rutas.push({
+          id: row.rutaId,
+          nombre: row.rutaNombre,
+        });
+      }
+    });
+
+    const resultRows = Object.values(oficinasMap);
+
+    return resultRows;
+  },
+
   // Obtener todas las oficinas con rutas y usuarios para admin
   getAllOficinas: async (page, limit, offset, role, userId) => {
     const params = [limit, offset];

@@ -10,6 +10,9 @@ router.post('/', verifyToken, oficinaController.createOficina);
 router.get('/', verifyToken, oficinaController.getAllOficinasByUser);
 
 // Obtener todas las oficinas con sus rutas
+router.get('/rutas', verifyToken, oficinaController.getAll);
+
+// Obtener todas las oficinas con sus rutas
 router.get('/all', verifyToken, oficinaController.getAllOficinas);
 
 // Buscar oficinas por nombre
