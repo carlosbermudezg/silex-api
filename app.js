@@ -34,6 +34,7 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(helmet({
     crossOriginResourcePolicy: false,
 }));
+
 const allowedOrigins = ['https://autentic.ec', 'https://app.autentic.ec'];
 
 app.use(cors({
@@ -47,6 +48,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
+
+app.options('*', cors());
 
 
 // Middleware para procesar JSON
