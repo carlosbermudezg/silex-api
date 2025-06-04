@@ -2,7 +2,7 @@ const db = require('../config/db');
 
 const Ruta = {
   // Crear una nueva ruta y asignarla al usuario en usuariorutas + crear config_credits
-  create: async (rutaData) => { 
+  create: async (rutaData) => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
@@ -10,7 +10,7 @@ const Ruta = {
       // 1️⃣ Insertar la nueva ruta
       const queryText = `
         INSERT INTO ruta (nombre, "oficinaId", user_create, "userId", "createdAt", "updatedAt", "productoId") 
-        VALUES ($1, $2, $3, $4, NOW(), NOW(), $5) 
+        VALUES ($1, $2, $3, $4, NOW(), NOW(), $5)
         RETURNING *;
       `;
       const values = [rutaData.nombre, rutaData.oficinaId, rutaData.userCreate, rutaData.userId, rutaData.productoId];

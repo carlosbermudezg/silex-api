@@ -2,7 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const ConfigController = require('../controllers/config.controller');
-const verifyToken = require('../utils/verifyToken'); // Asumimos que tienes este middleware para validar el token
+const verifyToken = require('../utils/verifyToken');
+
+//Dias no laborables sabados y domingos
+router.patch('/dias-no-laborables', verifyToken, ConfigController.updateDiasNoLaborablesConfig);
+
+//Dias no laborables sabados y domingos get default
+router.get('/dias-no-laborables-config', verifyToken, ConfigController.getDiasNoLaborablesConfig);
 
 // Obtener configuración de crédito por ruta
 router.get('/rutas', verifyToken, ConfigController.getallRutasConfig);

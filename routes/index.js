@@ -14,6 +14,7 @@ const routerPermisos = require('./permisos.router');
 const routerAuth = require('./auth.router');
 const routerTraslados = require('./traslados.router');
 const routerConfig = require('./config.router');
+const routerBackup = require('./backup.router');
 // Agrega otras rutas de ser necesario
 
 const router = express.Router();
@@ -32,6 +33,7 @@ router.use('/vehiculos', routerVehiculos);  // Ruta para manejar Vehiculos
 router.use('/permisos', routerPermisos); //Ruta para manejar permisos
 router.use('/traslado', routerTraslados);  // Ruta para manejar Pagos
 router.use('/config', routerConfig);  // Ruta para manejar Configuración
+router.use('/backup', routerBackup);  //Ruta para importar
 
 
 // Si tienes más rutas, puedes seguir agregándolas de la misma forma

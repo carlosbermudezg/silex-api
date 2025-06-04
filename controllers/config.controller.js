@@ -57,6 +57,31 @@ const updateConfigCaja = catchError(async (req, res) => {
   return res.status(200).json(config);
 });
 
+const updateDiasNoLaborablesConfig = catchError(async (req, res) => {
+  const { excluir_sabados, excluir_domingos } = req.body;
+
+  if (typeof excluir_sabados === 'undefined' && typeof excluir_domingos === 'undefined') {
+    return res.status(400).json({ message: 'Debe enviar al menos un campo para actualizar.' });
+  }
+
+  const updatedConfig = await Config.updateConfigDiasNoLaborables({
+    ...(excluir_sabados !== undefined && { excluir_sabados }),
+    ...(excluir_domingos !== undefined && { excluir_domingos })
+  });
+
+  return res.status(200).json({ message: 'Configuración actualizada', config: updatedConfig });
+});
+
+const getDiasNoLaborablesConfig = catchError(async (req, res) => {
+  const config = await Config.getConfigDiasNoLaborables();
+
+  if (!config) {
+    return res.status(404).json({ message: 'No se encontró configuración.' });
+  }
+
+  return res.json(config);
+});
+
 // Función para obtener una categoría de egreso por su ID
 const getCategoryById = catchError(async (req, res) => {
   const { id } = req.params;
@@ -294,5 +319,7 @@ module.exports = {
   updateCategoryIn,
   archiveCategoryIn,
   getAllCategoriesIn,
-  createCategoryIn
+  createCategoryIn,
+  updateDiasNoLaborablesConfig,
+  getDiasNoLaborablesConfig
 };

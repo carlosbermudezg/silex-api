@@ -135,7 +135,7 @@ const Credito = {
       ]);
   
       // 9️⃣ Cuotas
-      const cuotaMonto = await generarCuotas(credito.id, monto, interes, plazo_dias, frecuencia_pago);
+      const cuotaMonto = await Credito.generarCuotas(credito.id, monto, interes, plazo_dias, frecuencia_pago);
   
       await client.query('COMMIT');
       return {
@@ -662,83 +662,173 @@ const Credito = {
     } finally {
       client.release();
     }
-  }         
-};
-
-const generarCuotas = async (creditoId, monto, interes, plazo_dias, frecuencia_pago) => {
-  const cuotas = [];
-  const totalConInteres = monto + (monto * interes) / 100;
-
-  let cantidadCuotas = 0;
-  let diasEntreCuotas = 1;
-
-  switch (frecuencia_pago) {
-    case 'diario':
-      diasEntreCuotas = 1;
-      cantidadCuotas = plazo_dias;
-      break;
-    case 'semanal':
-      diasEntreCuotas = 7;
-      cantidadCuotas = Math.ceil(plazo_dias / 7);
-      break;
-    case 'quincenal':
-      diasEntreCuotas = 15;
-      cantidadCuotas = Math.ceil(plazo_dias / 15);
-      break;
-    case 'mensual':
-      diasEntreCuotas = 30;
-      cantidadCuotas = Math.ceil(plazo_dias / 30);
-      break;
-    default:
-      throw new Error('Frecuencia de pago no válida');
-  }
-
-  const cuotaMonto = parseFloat((totalConInteres / cantidadCuotas).toFixed(2));
-  let fecha = new Date();
-
-  const diasNoLaborablesQuery = `SELECT fecha FROM dias_no_laborables;`;
-  const diasNoLaborablesResult = await db.query(diasNoLaborablesQuery);
-  const diasNoLaborables = diasNoLaborablesResult.rows.map(row => row.fecha.toISOString().split('T')[0]);
-
-  for (let i = 0; i < cantidadCuotas; i++) {
-    fecha.setDate(fecha.getDate() + diasEntreCuotas);
-
-    // ⏩ Avanzar si la fecha cae en día no laborable
-    while (diasNoLaborables.includes(fecha.toISOString().split('T')[0])) {
-      fecha.setDate(fecha.getDate() + 1);
+  },
+  
+  generarCuotas: async (creditoId, monto, interes, plazo_dias, frecuencia_pago) => {
+    const cuotas = [];
+    const totalConInteres = monto + (monto * interes) / 100;
+  
+    let cantidadCuotas = 0;
+    let diasEntreCuotas = 1;
+  
+    switch (frecuencia_pago) {
+      case 'diario':
+        diasEntreCuotas = 1;
+        cantidadCuotas = plazo_dias;
+        break;
+      case 'semanal':
+        diasEntreCuotas = 7;
+        cantidadCuotas = Math.ceil(plazo_dias / 7);
+        break;
+      case 'quincenal':
+        diasEntreCuotas = 15;
+        cantidadCuotas = Math.ceil(plazo_dias / 15);
+        break;
+      case 'mensual':
+        diasEntreCuotas = 30;
+        cantidadCuotas = Math.ceil(plazo_dias / 30);
+        break;
+      default:
+        throw new Error('Frecuencia de pago no válida');
     }
-
-    cuotas.push({
-      creditoId,
-      monto: cuotaMonto,
-      fechaPago: new Date(fecha),
-      metodoPago: null,
-      estado: 'impago',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+  
+    const cuotaMonto = parseFloat((totalConInteres / cantidadCuotas).toFixed(2));
+    let fecha = new Date();
+  
+    // Obtener días no laborables específicos
+    const diasNoLaborablesQuery = `SELECT fecha FROM dias_no_laborables;`;
+    const diasNoLaborablesResult = await db.query(diasNoLaborablesQuery);
+    const diasNoLaborables = diasNoLaborablesResult.rows.map(row => row.fecha.toISOString().split('T')[0]);
+  
+    // Obtener configuración desde el modelo Config
+    const config = await Config.getConfigDiasNoLaborables() || { excluir_sabados: false, excluir_domingos: false };
+  
+    for (let i = 0; i < cantidadCuotas; i++) {
+      fecha.setDate(fecha.getDate() + diasEntreCuotas);
+  
+      while (
+        diasNoLaborables.includes(fecha.toISOString().split('T')[0]) ||
+        (config.excluir_sabados && fecha.getDay() === 6) || // sábado = 6
+        (config.excluir_domingos && fecha.getDay() === 0)   // domingo = 0
+      ) {
+        fecha.setDate(fecha.getDate() + 1);
+      }
+  
+      cuotas.push({
+        creditoId,
+        monto: cuotaMonto,
+        fechaPago: new Date(fecha),
+        metodoPago: null,
+        estado: 'impago',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+  
+    // Guardar en la tabla cuotas
+    const insertPromises = cuotas.map(cuota => {
+      const query = `
+        INSERT INTO cuotas 
+        ("creditoId", monto, "fechaPago", estado, "createdAt", "updatedAt", "monto_pagado")
+        VALUES ($1, $2, $3, $4, $5, $6, 0);
+      `;
+      const values = [
+        cuota.creditoId,
+        cuota.monto,
+        cuota.fechaPago,
+        cuota.estado,
+        cuota.createdAt,
+        cuota.updatedAt,
+      ];
+      return db.query(query, values);
     });
+  
+    await Promise.all(insertPromises);
+    return cuotaMonto;
   }
-
-  // Guardar en la tabla cuotas
-  const insertPromises = cuotas.map(cuota => {
-    const query = `
-      INSERT INTO cuotas 
-      ("creditoId", monto, "fechaPago", estado, "createdAt", "updatedAt", "monto_pagado")
-      VALUES ($1, $2, $3, $4, $5, $6, 0);
-    `;
-    const values = [
-      cuota.creditoId,
-      cuota.monto,
-      cuota.fechaPago,
-      cuota.estado,
-      cuota.createdAt,
-      cuota.updatedAt,
-    ];
-    return db.query(query, values);
-  });
-
-  await Promise.all(insertPromises);
-  return cuotaMonto
 };
+
+// const generarCuotas = async (creditoId, monto, interes, plazo_dias, frecuencia_pago) => {
+//   const cuotas = [];
+//   const totalConInteres = monto + (monto * interes) / 100;
+
+//   let cantidadCuotas = 0;
+//   let diasEntreCuotas = 1;
+
+//   switch (frecuencia_pago) {
+//     case 'diario':
+//       diasEntreCuotas = 1;
+//       cantidadCuotas = plazo_dias;
+//       break;
+//     case 'semanal':
+//       diasEntreCuotas = 7;
+//       cantidadCuotas = Math.ceil(plazo_dias / 7);
+//       break;
+//     case 'quincenal':
+//       diasEntreCuotas = 15;
+//       cantidadCuotas = Math.ceil(plazo_dias / 15);
+//       break;
+//     case 'mensual':
+//       diasEntreCuotas = 30;
+//       cantidadCuotas = Math.ceil(plazo_dias / 30);
+//       break;
+//     default:
+//       throw new Error('Frecuencia de pago no válida');
+//   }
+
+//   const cuotaMonto = parseFloat((totalConInteres / cantidadCuotas).toFixed(2));
+//   let fecha = new Date();
+
+//   // Obtener días no laborables específicos
+//   const diasNoLaborablesQuery = `SELECT fecha FROM dias_no_laborables;`;
+//   const diasNoLaborablesResult = await db.query(diasNoLaborablesQuery);
+//   const diasNoLaborables = diasNoLaborablesResult.rows.map(row => row.fecha.toISOString().split('T')[0]);
+
+//   // Obtener configuración desde el modelo Config
+//   const config = await Config.getConfigDiasNoLaborables() || { excluir_sabados: false, excluir_domingos: false };
+
+//   for (let i = 0; i < cantidadCuotas; i++) {
+//     fecha.setDate(fecha.getDate() + diasEntreCuotas);
+
+//     while (
+//       diasNoLaborables.includes(fecha.toISOString().split('T')[0]) ||
+//       (config.excluir_sabados && fecha.getDay() === 6) || // sábado = 6
+//       (config.excluir_domingos && fecha.getDay() === 0)   // domingo = 0
+//     ) {
+//       fecha.setDate(fecha.getDate() + 1);
+//     }
+
+//     cuotas.push({
+//       creditoId,
+//       monto: cuotaMonto,
+//       fechaPago: new Date(fecha),
+//       metodoPago: null,
+//       estado: 'impago',
+//       createdAt: new Date(),
+//       updatedAt: new Date(),
+//     });
+//   }
+
+//   // Guardar en la tabla cuotas
+//   const insertPromises = cuotas.map(cuota => {
+//     const query = `
+//       INSERT INTO cuotas 
+//       ("creditoId", monto, "fechaPago", estado, "createdAt", "updatedAt", "monto_pagado")
+//       VALUES ($1, $2, $3, $4, $5, $6, 0);
+//     `;
+//     const values = [
+//       cuota.creditoId,
+//       cuota.monto,
+//       cuota.fechaPago,
+//       cuota.estado,
+//       cuota.createdAt,
+//       cuota.updatedAt,
+//     ];
+//     return db.query(query, values);
+//   });
+
+//   await Promise.all(insertPromises);
+//   return cuotaMonto;
+// };
 
 module.exports = Credito;

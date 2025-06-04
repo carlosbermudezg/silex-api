@@ -69,8 +69,8 @@ const Caja = {
   // Crear una nueva caja
   create: async (saldoActual, rutaId) => {
     try {
-      const query = 'INSERT INTO cajas ("saldoActual", "rutaId", "createdAt", "updatedAt") VALUES ($1, $2, NOW(), NOW()) RETURNING *';
-      const values = [saldoActual, rutaId];
+      const query = 'INSERT INTO cajas ("saldoActual", "rutaId", "createdAt", "updatedAt", estado) VALUES ($1, $2, NOW(), NOW(), $3) RETURNING *';
+      const values = [saldoActual, rutaId, 'cerrada'];
       const res = await pool.query(query, values);
       return res.rows[0];
     } catch (error) {
@@ -245,7 +245,7 @@ const Caja = {
         [cajaId]
       );
 
-      montoInicial = montoInicial + turnoAnterior?.rows[0]?.monto_final
+      montoInicial = montoInicial + turnoAnterior?.rows[0]?.monto_final || 0
 
       // 1️⃣ Abrir caja de la ruta
       await client.query(

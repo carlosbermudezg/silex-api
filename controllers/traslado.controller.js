@@ -58,7 +58,67 @@ const createClienteTrasladoMasivo = catchError(async (req, res) => {
   return res.status(201).json({ message: 'Traslados registrados exitosamente', traslados });
 });
 
+const createRutaTraslado = catchError(async (req, res) => {
+  const {
+    ruta_id,
+    oficina_origen_id,
+    oficina_destino_id,
+    motivo_traslado
+  } = req.body;
+
+  const user_create = req.user.userId;
+
+  if (!ruta_id || !oficina_origen_id || !oficina_destino_id || !motivo_traslado || !user_create) {
+    return res.status(400).json({ message: 'Faltan campos obligatorios.' });
+  }
+
+  const traslado = await Traslado.createRutaTraslado({
+    ruta_id,
+    oficina_origen_id,
+    oficina_destino_id,
+    motivo_traslado,
+    user_create
+  });
+
+  return res.status(201).json({ message: 'Traslado de ruta registrado exitosamente', traslado });
+});
+
+const createTrasladoEfectivo = catchError(async (req, res) => {
+  const {
+    ruta_origen_id,
+    ruta_destino_id,
+    monto,
+    motivo_traslado
+  } = req.body;
+
+  const user_create = req.user.userId;
+
+  if (!ruta_origen_id || !ruta_destino_id || !monto || !motivo_traslado || !user_create) {
+    return res.status(400).json({ message: 'Faltan campos obligatorios.' });
+  }
+
+  if (ruta_origen_id === ruta_destino_id) {
+    return res.status(400).json({ message: 'La ruta origen y destino no pueden ser iguales.' });
+  }
+
+  if (monto <= 0) {
+    return res.status(400).json({ message: 'El monto debe ser mayor a cero.' });
+  }
+
+  const traslado = await Traslado.createTrasladoEfectivo({
+    ruta_origen_id,
+    ruta_destino_id,
+    monto,
+    motivo_traslado,
+    user_create,
+  });
+
+  return res.status(201).json({ message: 'Traslado de efectivo registrado exitosamente', traslado });
+});
+
 module.exports = {
     getTrasladosClientesPaginados,
-    createClienteTrasladoMasivo
+    createClienteTrasladoMasivo,
+    createRutaTraslado,
+    createTrasladoEfectivo
 };

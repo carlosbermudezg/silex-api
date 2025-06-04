@@ -374,7 +374,34 @@ const Config = {
     const query = `DELETE FROM dias_no_laborables WHERE id = $1 RETURNING *;`;
     const result = await pool.query(query, [id]);
     return result.rows[0];
-  }
+  },
+
+  getConfigDiasNoLaborables: async () => {
+    const result = await pool.query(`SELECT * FROM config_dias_no_laborables LIMIT 1`);
+    return result.rows[0];
+  },
+  
+  updateConfigDiasNoLaborables: async (updates) => {
+    const fields = [];
+    const values = [];
+    let index = 1;
+  
+    for (const key in updates) {
+      fields.push(`${key} = $${index}`);
+      values.push(updates[key]);
+      index++;
+    }
+  
+    const query = `
+      UPDATE config_dias_no_laborables
+      SET ${fields.join(', ')}, updated_at = NOW()
+      WHERE id = 1
+      RETURNING *;
+    `;
+  
+    const result = await pool.query(query, values);
+    return result.rows[0];
+  },
 };
 
 module.exports = Config;
