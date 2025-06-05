@@ -54,11 +54,9 @@ const getAllCreditos = catchError(async (req, res) => {
   });
 });
 
-//Obtenemos los creditos paginados segun la eleccion de usuario
 const getDataDash = catchError(async (req, res) => {
-  const oficinaId = req.query.oficinaId || null;
-  const rutaId = req.query.rutaId || null;
-  const data = await Credito.getDataDash(oficinaId, rutaId);
+  const id = req.query;
+  const data = await Credito.getDataDash(id);
   return res.status(200).json(data);
 });
 

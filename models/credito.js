@@ -265,72 +265,27 @@ const Credito = {
     return { creditos, totalCreditos };
   },
 
-  // modelo/Credito.js
-  getDataDash: async (oficinaId, rutaId) => {
+  getDataDash: async (rutaId) => {
+    console.log(rutaId)
     try {
-        // Consulta para obtener los créditos, cuotas impagas y pagos realizados hoy
-        const queryText = `
-          SELECT 
-              COUNT(c.id) AS total,  -- Total de créditos impagos
-              SUM(c.saldo_capital + c.saldo_interes) AS cartera,  -- Suma de saldo_capital + saldo_interes (cartera)
-              SUM(COALESCE(p.monto, 0)) AS recaudacion,  -- Suma de los pagos realizados hoy (recaudación)
-              COUNT(DISTINCT CASE
-                WHEN q.estado = 'impago' AND q."fechaPago" < CURRENT_DATE THEN c.id 
-              END) AS morosos,
-              COUNT(DISTINCT CASE
-                WHEN q.estado = 'impago' AND q."fechaPago" >= CURRENT_DATE THEN c.id 
-              END) AS aldia,
-              (
-                SELECT COUNT(*) FROM (
-                  SELECT c2.id
-                  FROM creditos c2
-                  LEFT JOIN cuotas q2 ON q2."creditoId" = c2.id
-                  WHERE c2.estado = 'impago' AND q2.estado = 'impago'
-                  GROUP BY c2.id
-                  HAVING MAX(CASE 
-                              WHEN q2."fechaPago" < CURRENT_DATE - INTERVAL '3 days' THEN 1 
-                              ELSE 0 
-                            END) = 0
-                ) AS sub
-              ) AS atrasados,
-              (
-                SELECT COUNT(*) FROM (
-                  SELECT c2.id
-                  FROM creditos c2
-                  LEFT JOIN cuotas q2 ON q2."creditoId" = c2.id
-                  WHERE c2.estado = 'impago' AND q2.estado = 'impago'
-                  GROUP BY c2.id
-                  HAVING MAX(CASE 
-                              WHEN q2."fechaPago" < CURRENT_DATE - INTERVAL '5 days' THEN 1 
-                              ELSE 0 
-                            END) = 1
-                ) AS sub
-              ) AS alto_riesgo,
-              COUNT(DISTINCT CASE 
-                WHEN c."fechaVencimiento" < CURRENT_DATE THEN c.id  -- Créditos vencidos
-              END) AS vencidos
-          FROM 
-              creditos c
-          LEFT JOIN 
-              cuotas q ON q."creditoId" = c.id AND q.estado = 'impago'  -- Incluir cuotas impagas
-          LEFT JOIN 
-              pagos p ON p."cuotaId" = q.id AND DATE(p."createdAt") = CURRENT_DATE  -- Pagos realizados hoy
-          WHERE 
-              c.estado = 'impago';  -- Filtrar créditos impagos
+      const queryText = `
+        SELECT 
+          COUNT(c.id) AS total_impagos,
+          COALESCE(SUM(c.saldo_capital + c.saldo_interes), 0) AS cartera
+        FROM 
+          creditos c
+        INNER JOIN 
+          clientes cl ON cl.id = c."clienteId"
+        WHERE 
+          c.estado = 'impago'
+          AND cl."rutaId" = $1
       `;
-
-
-        const data = await db.query(queryText);
-
-        // Organizar los resultados de acuerdo con la estructura que deseas
-        let result = [];
-        
-        // Agrupar los datos por credito_id
-        console.log(data.rowCount)
-        return data.rows;
+  
+      const data = await db.query(queryText, [rutaId.id]);
+      return data.rows[0];  // Devuelve un objeto con { total_impagos, cartera }
     } catch (error) {
-        console.error("Error al obtener los datos:", error);
-        throw error; // Lanza el error para manejarlo en la capa superior si es necesario
+      console.error("Error al obtener los datos:", error);
+      throw error;
     }
   },
 

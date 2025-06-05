@@ -1,7 +1,5 @@
 // models/config.js
 const pool = require('../config/db'); // Importar la conexión a la base de datos
-const Caja = require('../models/caja');
-const Credito = require('../models/credito');
 const Config = require('../models/config')
 const { addDays, addWeeks, addMonths, format, parseISO } = require('date-fns');
 
@@ -51,6 +49,7 @@ const Backup = {
             // Mantener el saldo en memoria para evitar inconsistencias
             let saldoActualCaja = parseFloat(caja.saldoActual);
           
+            // Bloque completo corregido y optimizado
             if (tx.tipo === 'CREDITO') {
               const clienteResult = await client.query(`
                 INSERT INTO clientes (
@@ -76,29 +75,29 @@ const Backup = {
                 1,
                 400
               ]);
-          
+            
               const cliente = clienteResult.rows[0] || (
                 await client.query(`SELECT id, nombres FROM clientes WHERE codigo_cliente = $1`, [tx.codigo_cliente])
               ).rows[0];
-          
+            
               const clienteId = cliente.id;
               const clienteNombre = cliente.nombres;
-          
+            
               const monto = parseFloat(tx.valor_credito);
               const interes = parseFloat((tx.interes * 100).toFixed(2));
               const montoInteres = parseFloat(tx.total_credito) - monto;
-          
+            
               const fechaVencimiento = await Backup.calcularFechaVencimiento({
                 forma_pago: tx.forma_pago,
                 numero_cuotas: tx.numero_cuotas,
                 fecha: tx.fecha
               });
-          
+            
               const frecuencia_pago = tx.forma_pago.toLowerCase();
               const diferenciaMs = new Date(fechaVencimiento).getTime() - new Date(tx.fecha).getTime();
               const plazo = Math.floor(diferenciaMs / (1000 * 60 * 60 * 24));
               const estado = tx.estado === 'PAGADO' ? 'pagado' : 'impago';
-          
+            
               const creditoResult = await client.query(`
                 INSERT INTO creditos ("clienteId", "usuarioId", monto, interes, "monto_interes_generado", "capital_pagado", "interes_pagado", "saldo_capital", "saldo_interes", plazo, "frecuencia_pago", estado, "productoId", "turno_id", "fechaVencimiento", "createdAt", "updatedAt")
                 VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
@@ -119,9 +118,9 @@ const Backup = {
                 fechaVencimiento,
                 timestamp
               ]);
-          
+            
               const creditoId = creditoResult.rows[0].id;
-          
+            
               await Backup.generarCuotas(
                 creditoId,
                 monto,
@@ -130,14 +129,14 @@ const Backup = {
                 frecuencia_pago,
                 new Date(tx.fecha)
               );
-          
+            
               // Actualizar saldo de caja descontando el monto desembolsado
               const nuevoSaldoCaja = saldoActualCaja - monto;
-          
+            
               await client.query(`
                 UPDATE cajas SET "saldoActual" = $1, "updatedAt" = NOW() WHERE id = $2
               `, [nuevoSaldoCaja, caja.id]);
-          
+            
               await client.query(`
                 INSERT INTO movimientos_caja (
                   "cajaId", descripcion, saldo, "saldo_anterior", "createdAt", "updatedAt",
@@ -156,13 +155,15 @@ const Backup = {
                 creditoId,
                 turno.id
               ]);
-          
+            
               // Actualizamos saldo en memoria para seguir con operaciones
               saldoActualCaja = nuevoSaldoCaja;
-          
+            
+              // Calculamos el abono (total_credito - saldo)
               const abono = parseFloat(tx.total_credito) - parseFloat(tx.saldo || 0);
-          
+            
               if (abono > 0) {
+                // Insertar el pago de abono
                 const pagoResult = await client.query(`
                   INSERT INTO pagos (
                     cliente_id, monto, tipo, observacion, "createdAt", "updatedAt", turno_id, user_created_id, estado, "metodoPago"
@@ -177,33 +178,22 @@ const Backup = {
                   tx.usuario,
                   `Registro de pago de crédito - (${creditoId}: ${clienteNombre})`
                 ]);
-          
+            
                 const pagoId = pagoResult.rows[0].id;
-          
+            
+                // Obtener cuotas para aplicar el abono
                 const cuotas = await client.query(`
                   SELECT id, monto, monto_pagado
                   FROM cuotas
                   WHERE "creditoId" = $1
                   ORDER BY "fechaPago" ASC
                 `, [creditoId]);
-          
+            
                 let restante = abono;
-                let totalCapitalPagado = 0;
-                let totalInteresPagado = 0;
-          
-                const credito = await client.query(`
-                  SELECT monto, "monto_interes_generado"
-                  FROM creditos
-                  WHERE id = $1
-                `, [creditoId]);
-          
-                const capitalOriginal = parseFloat(credito.rows[0].monto);
-                const interesGenerado = parseFloat(credito.rows[0].monto_interes_generado);
-                const totalDeuda = capitalOriginal + interesGenerado;
-          
+            
                 for (const cuota of cuotas.rows) {
                   if (restante <= 0) break;
-          
+            
                   const cuotaId = cuota.id;
                   const montoCuota = parseFloat(cuota.monto);
                   const pagadoActual = parseFloat(cuota.monto_pagado || 0);
@@ -211,63 +201,60 @@ const Backup = {
                   const montoAbonado = Math.min(restante, saldoCuota);
                   const nuevoMontoPagado = pagadoActual + montoAbonado;
                   const estadoCuota = nuevoMontoPagado >= montoCuota ? 'pagado' : 'impago';
-          
-                  const proporcion = montoAbonado / totalDeuda;
-                  const capitalPagado = parseFloat((capitalOriginal * proporcion).toFixed(2));
-                  const interesPagado = parseFloat((interesGenerado * proporcion).toFixed(2));
-          
-                  totalCapitalPagado += capitalPagado;
-                  totalInteresPagado += interesPagado;
-          
+            
+                  // Insertar detalle de pago cuota, sin capital e interés específico
                   await client.query(`
                     INSERT INTO pagos_cuotas ("pagoId", "cuotaId", monto_abonado, created_at, capital_pagado, interes_pagado)
-                    VALUES ($1, $2, $3, NOW(), $4, $5)
+                    VALUES ($1, $2, $3, NOW(), 0, 0)
                   `, [
                     pagoId,
                     cuotaId,
-                    montoAbonado,
-                    capitalPagado,
-                    interesPagado
+                    montoAbonado
                   ]);
-          
+            
+                  // Actualizar monto pagado y estado cuota
                   await client.query(`
                     UPDATE cuotas
                     SET monto_pagado = $1, estado = $2, "updatedAt" = NOW()
                     WHERE id = $3
                   `, [nuevoMontoPagado, estadoCuota, cuotaId]);
-          
+            
                   restante -= montoAbonado;
                 }
-          
-                const saldoCapital = capitalOriginal - totalCapitalPagado;
-                const saldoInteres = interesGenerado - totalInteresPagado;
-                const nuevoEstado = (saldoCapital <= 0 && saldoInteres <= 0) ? 'pagado' : 'impago';
-          
+            
+                // Aquí actualizamos el crédito usando datos directos de la transacción tx
+                const nuevoEstado = tx.estado === 'PAGADO' ? 'pagado' : 'impago';
+                const saldoCapital = parseFloat(tx.saldo) || 0; // Saldo que viene en la transacción
+                const saldoInteres = 0; // O ajustar si tienes saldo interés en tx
+            
+                const capitalPagado = monto - saldoCapital;
+                const interesPagado = montoInteres; // Ajusta si tienes dato preciso
+            
                 await client.query(`
                   UPDATE creditos
                   SET capital_pagado = $1,
-                    interes_pagado = $2,
-                    saldo_capital = $3,
-                    saldo_interes = $4,
-                    estado = $5,
-                    "updatedAt" = NOW()
+                      interes_pagado = $2,
+                      saldo_capital = $3,
+                      saldo_interes = $4,
+                      estado = $5,
+                      "updatedAt" = NOW()
                   WHERE id = $6
                 `, [
-                  totalCapitalPagado,
-                  totalInteresPagado,
+                  capitalPagado,
+                  interesPagado,
                   saldoCapital,
                   saldoInteres,
                   nuevoEstado,
                   creditoId
                 ]);
-          
-                // 💵 Actualizar saldo luego del abono
+            
+                // Actualizar saldo caja luego del abono
                 const nuevoSaldoConPago = saldoActualCaja + abono;
-          
+            
                 await client.query(`
                   UPDATE cajas SET "saldoActual" = $1, "updatedAt" = NOW() WHERE id = $2
                 `, [nuevoSaldoConPago, caja.id]);
-          
+            
                 await client.query(`
                   INSERT INTO movimientos_caja (
                     "cajaId", descripcion, saldo, "saldo_anterior", "createdAt", "updatedAt",
@@ -286,10 +273,11 @@ const Backup = {
                   creditoId,
                   turno.id
                 ]);
-          
+            
                 saldoActualCaja = nuevoSaldoConPago;
               }
-            } else if (tx.tipo === 'INGRESO') {
+            }                                       
+            else if (tx.tipo === 'INGRESO') {
               const monto = parseFloat(tx.valor);
               // Insertar en ingresos
               await client.query(`
