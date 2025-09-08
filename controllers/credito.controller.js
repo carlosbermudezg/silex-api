@@ -56,8 +56,22 @@ const getAllCreditos = catchError(async (req, res) => {
 
 const getDataDash = catchError(async (req, res) => {
   const id = req.query;
-  const data = await Credito.getDataDash(id);
-  return res.status(200).json(data);
+  if(id === "null"){
+    return res.status(200).json([])
+  }else{
+    const data = await Credito.getDataDash(id);
+    return res.status(200).json(data);
+  }
+});
+
+const getDataDashBars = catchError(async (req, res) => {
+  const {id, q} = req.query;
+  if(id === 'null'){
+    return res.status(200).json([])
+  }else{
+    const data = await Credito.getDataDashBars(q, id);
+    return res.status(200).json(data);
+  }
 });
 
 // Obtener un crédito por ID
@@ -96,7 +110,11 @@ const createPago = catchError(async (req, res) => {
   const { creditoId, valor, metodoPago, location } = req.body;
   const userId = req.user.userId;
 
-  if (!creditoId || !valor || !metodoPago) {
+  if (!creditoId || !metodoPago) {
+    return res.status(400).json({ error: "Todos los campos son requeridos" });
+  }
+
+  if(valor < 0 || isNaN(valor)){
     return res.status(400).json({ error: "Todos los campos son requeridos" });
   }
 
@@ -134,5 +152,6 @@ module.exports = {
   deleteCredito,
   getCreditosImpagos,
   createPago,
-  getDataDash
+  getDataDash,
+  getDataDashBars
 };

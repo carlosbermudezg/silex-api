@@ -16,6 +16,8 @@ router.post('/egreso-out', verifyToken, CajaController.crearEgresoAdm);
 // Ruta para registrar ingreso Adm
 router.post('/ingreso', verifyToken, CajaController.crearIngresoAdm);
 // Ruta para obtener egresos del dia por usuario
+router.get('/turnos-abiertos', verifyToken, CajaController.getOpenTurnos);
+// Ruta para obtener egresos del dia por usuario
 router.get('/egresos-dia', verifyToken, CajaController.getEgresosDia);
 //Obtener egresos por turno
 router.get('/egresos-turno/:id', verifyToken, CajaController.getEgresosByTurno);

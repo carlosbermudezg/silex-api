@@ -266,28 +266,194 @@ const Credito = {
   },
 
   getDataDash: async (rutaId) => {
-    console.log(rutaId)
+    if(rutaId === null){
+      return []
+    }
     try {
       const queryText = `
+        WITH config AS (
+          SELECT days_to_yellow, days_to_red FROM config_default LIMIT 1
+        ),
+        creditos_filtrados AS (
+          SELECT 
+            c.id,
+            c.saldo_capital,
+            c.saldo_interes,
+            c."fechaVencimiento",
+            cl."rutaId"
+          FROM creditos c
+          INNER JOIN clientes cl ON cl.id = c."clienteId"
+          WHERE c.estado = 'impago' AND cl."rutaId" = $1
+        ),
+        max_dias_atraso AS (
+          SELECT 
+            q."creditoId",
+            MAX(DATE_PART('day', CURRENT_DATE - q."fechaPago")) AS dias_atraso
+          FROM cuotas q
+          INNER JOIN creditos_filtrados cf ON cf.id = q."creditoId"
+          WHERE q.estado = 'impago'
+          GROUP BY q."creditoId"
+        ),
+        clasificacion_creditos AS (
+          SELECT 
+            cf.id AS credito_id,
+            cf.saldo_capital,
+            cf.saldo_interes,
+            CASE
+              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_red OR cf."fechaVencimiento" < CURRENT_DATE THEN 'vencido'
+              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_yellow THEN 'alto_riesgo'
+              WHEN COALESCE(mda.dias_atraso, 0) > 0 THEN 'atrasado'
+              ELSE 'al_dia'
+            END AS clasificacion
+          FROM creditos_filtrados cf
+          LEFT JOIN max_dias_atraso mda ON mda."creditoId" = cf.id
+          CROSS JOIN config cfg
+        ),
+        caja_actual AS (
+          SELECT id, "saldoActual"
+          FROM cajas
+          WHERE "rutaId" = $1
+          LIMIT 1
+        ),
+        turno_activo AS (
+          SELECT t.id AS turno_id
+          FROM turnos t
+          INNER JOIN caja_actual c ON c.id = t."caja_id"
+          WHERE t."fecha_cierre" IS NULL
+          LIMIT 1
+        ),
+        pagos_aprobados AS (
+          SELECT COALESCE(SUM(p.monto), 0) AS recaudacion
+          FROM pagos p
+          INNER JOIN turno_activo t ON t.turno_id = p."turno_id"
+          WHERE p.estado = 'aprobado'
+        ),
+        egresos_aprobados AS (
+          SELECT COALESCE(SUM(e.monto), 0) AS gastos
+          FROM egresos e
+          INNER JOIN turno_activo t ON t.turno_id = e."turno_id"
+          WHERE e.estado = 'aprobado'
+        )
+  
         SELECT 
-          COUNT(c.id) AS total_impagos,
-          COALESCE(SUM(c.saldo_capital + c.saldo_interes), 0) AS cartera
-        FROM 
-          creditos c
-        INNER JOIN 
-          clientes cl ON cl.id = c."clienteId"
-        WHERE 
-          c.estado = 'impago'
-          AND cl."rutaId" = $1
+          COUNT(*) AS total_impagos,
+          COALESCE(SUM(saldo_capital + saldo_interes), 0) AS cartera,
+  
+          COUNT(*) FILTER (WHERE clasificacion = 'alto_riesgo') AS creditos_alto_riesgo,
+          COUNT(*) FILTER (WHERE clasificacion = 'vencido') AS creditos_vencidos,
+          COUNT(*) FILTER (WHERE clasificacion = 'atrasado') AS creditos_atrasados,
+          COUNT(*) FILTER (WHERE clasificacion = 'al_dia') AS creditos_al_dia,
+  
+          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'alto_riesgo') AS cartera_alto_riesgo,
+          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'vencido') AS cartera_vencidos,
+          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'atrasado') AS cartera_atrasados,
+          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'al_dia') AS cartera_al_dia,
+  
+          (SELECT "saldoActual" FROM caja_actual) AS saldo_caja,
+          (SELECT turno_id FROM turno_activo) AS turno_id,
+          (SELECT recaudacion FROM pagos_aprobados) AS recaudacion,
+          (SELECT gastos FROM egresos_aprobados) AS gastos
+        FROM clasificacion_creditos;
       `;
   
       const data = await db.query(queryText, [rutaId.id]);
-      return data.rows[0];  // Devuelve un objeto con { total_impagos, cartera }
+      return data.rows[0];
     } catch (error) {
-      console.error("Error al obtener los datos:", error);
+      console.error("Error al obtener los datos del dashboard:", error);
       throw error;
     }
-  },
+  },  
+
+  getDataDashBars: async (frecuencia, rutaId) => {
+    if(rutaId === null){
+      return []
+    }
+    try {
+      const queryText = `
+        WITH fechas AS (
+          SELECT 
+            CURRENT_DATE AS hoy,
+            CASE 
+              WHEN $1 = 'semanal' THEN CURRENT_DATE - INTERVAL '6 days'
+              ELSE CURRENT_DATE
+            END AS desde
+        ),
+        creditos_ruta AS (
+          SELECT 
+            DATE(c."createdAt") AS fecha,
+            SUM(c.monto) AS total_creditos,
+            SUM(c.monto_interes_generado) AS total_interes
+          FROM creditos c
+          JOIN clientes cl ON cl.id = c."clienteId"
+          JOIN fechas f ON DATE(c."createdAt") BETWEEN f.desde AND f.hoy
+          WHERE cl."rutaId" = $2
+          GROUP BY DATE(c."createdAt")
+        ),
+        caja_ruta AS (
+          SELECT id AS caja_id
+          FROM cajas
+          WHERE "rutaId" = $2
+          LIMIT 1
+        ),
+        movimientos_filtrados AS (
+          SELECT 
+            DATE(mc."createdAt") AS fecha,
+            mc.tipo,
+            SUM(mc.monto) AS total
+          FROM movimientos_caja mc
+          JOIN caja_ruta cr ON cr.caja_id = mc."cajaId"
+          JOIN fechas f ON DATE(mc."createdAt") BETWEEN f.desde AND f.hoy
+          GROUP BY DATE(mc."createdAt"), mc.tipo
+        ),
+        dias AS (
+          SELECT generate_series(f.desde, f.hoy, interval '1 day')::date AS fecha
+          FROM fechas f
+        ),
+        resultados AS (
+          SELECT 
+            d.fecha,
+            COALESCE(c.total_creditos, 0) AS total_creditos,
+            COALESCE(c.total_interes, 0) AS total_interes,
+            COALESCE(SUM(CASE WHEN m.tipo = 'abono' THEN m.total END), 0) AS recaudo,
+            COALESCE(SUM(CASE WHEN m.tipo = 'ingreso' THEN m.total END), 0) AS ingresos,
+            COALESCE(SUM(CASE WHEN m.tipo = 'gasto' THEN m.total END), 0) AS egresos
+          FROM dias d
+          LEFT JOIN creditos_ruta c ON c.fecha = d.fecha
+          LEFT JOIN movimientos_filtrados m ON m.fecha = d.fecha
+          GROUP BY d.fecha, c.total_creditos, c.total_interes
+          ORDER BY d.fecha
+        )
+        SELECT * FROM resultados;
+      `;
+  
+      const data = await db.query(queryText, [frecuencia, rutaId]);
+  
+      if (frecuencia === 'diario') {
+        const hoyLocal = new Date();
+        const hoyString = hoyLocal.toISOString().split('T')[0]; // "YYYY-MM-DD"
+  
+        const rowDiario = data.rows.find(row => {
+          const rowDate = new Date(row.fecha).toISOString().split('T')[0];
+          return rowDate === hoyString;
+        });
+  
+        return [rowDiario || {
+          fecha: new Date().toISOString(), // mantiene formato ISO completo
+          total_creditos: 0,
+          total_interes: 0,
+          recaudo: 0,
+          ingresos: 0,
+          egresos: 0,
+        }];
+      }
+  
+      return data.rows;
+  
+    } catch (error) {
+      console.error("Error al obtener los datos del dashboard:", error);
+      throw error;
+    }
+  },   
 
   // Contar el total de créditos para la paginación
   countAll: async () => {
@@ -702,88 +868,5 @@ const Credito = {
     return cuotaMonto;
   }
 };
-
-// const generarCuotas = async (creditoId, monto, interes, plazo_dias, frecuencia_pago) => {
-//   const cuotas = [];
-//   const totalConInteres = monto + (monto * interes) / 100;
-
-//   let cantidadCuotas = 0;
-//   let diasEntreCuotas = 1;
-
-//   switch (frecuencia_pago) {
-//     case 'diario':
-//       diasEntreCuotas = 1;
-//       cantidadCuotas = plazo_dias;
-//       break;
-//     case 'semanal':
-//       diasEntreCuotas = 7;
-//       cantidadCuotas = Math.ceil(plazo_dias / 7);
-//       break;
-//     case 'quincenal':
-//       diasEntreCuotas = 15;
-//       cantidadCuotas = Math.ceil(plazo_dias / 15);
-//       break;
-//     case 'mensual':
-//       diasEntreCuotas = 30;
-//       cantidadCuotas = Math.ceil(plazo_dias / 30);
-//       break;
-//     default:
-//       throw new Error('Frecuencia de pago no válida');
-//   }
-
-//   const cuotaMonto = parseFloat((totalConInteres / cantidadCuotas).toFixed(2));
-//   let fecha = new Date();
-
-//   // Obtener días no laborables específicos
-//   const diasNoLaborablesQuery = `SELECT fecha FROM dias_no_laborables;`;
-//   const diasNoLaborablesResult = await db.query(diasNoLaborablesQuery);
-//   const diasNoLaborables = diasNoLaborablesResult.rows.map(row => row.fecha.toISOString().split('T')[0]);
-
-//   // Obtener configuración desde el modelo Config
-//   const config = await Config.getConfigDiasNoLaborables() || { excluir_sabados: false, excluir_domingos: false };
-
-//   for (let i = 0; i < cantidadCuotas; i++) {
-//     fecha.setDate(fecha.getDate() + diasEntreCuotas);
-
-//     while (
-//       diasNoLaborables.includes(fecha.toISOString().split('T')[0]) ||
-//       (config.excluir_sabados && fecha.getDay() === 6) || // sábado = 6
-//       (config.excluir_domingos && fecha.getDay() === 0)   // domingo = 0
-//     ) {
-//       fecha.setDate(fecha.getDate() + 1);
-//     }
-
-//     cuotas.push({
-//       creditoId,
-//       monto: cuotaMonto,
-//       fechaPago: new Date(fecha),
-//       metodoPago: null,
-//       estado: 'impago',
-//       createdAt: new Date(),
-//       updatedAt: new Date(),
-//     });
-//   }
-
-//   // Guardar en la tabla cuotas
-//   const insertPromises = cuotas.map(cuota => {
-//     const query = `
-//       INSERT INTO cuotas 
-//       ("creditoId", monto, "fechaPago", estado, "createdAt", "updatedAt", "monto_pagado")
-//       VALUES ($1, $2, $3, $4, $5, $6, 0);
-//     `;
-//     const values = [
-//       cuota.creditoId,
-//       cuota.monto,
-//       cuota.fechaPago,
-//       cuota.estado,
-//       cuota.createdAt,
-//       cuota.updatedAt,
-//     ];
-//     return db.query(query, values);
-//   });
-
-//   await Promise.all(insertPromises);
-//   return cuotaMonto;
-// };
 
 module.exports = Credito;

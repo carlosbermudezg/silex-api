@@ -5,6 +5,7 @@ const routerUsuarios = require('./usuarios.router');
 const routerProductos = require('./productos.router');
 const routerCreditos = require('./creditos.router');
 const routerCaja = require('./caja.router');
+const routerRecorrido = require('./recorrido.router');
 const routerRutas = require('./rutas.router');
 const routerClientes = require('./clientes.router');
 const routerOficinas = require('./oficinas.router');
@@ -25,6 +26,7 @@ router.use('/usuarios', routerUsuarios);  // Ruta para manejar Usuarios
 router.use('/productos', routerProductos);  // Ruta para manejar Productos
 router.use('/creditos', routerCreditos);  // Ruta para manejar Créditos
 router.use('/caja', routerCaja); //Ruta para manejar caja
+router.use('/recorrido', routerRecorrido); //Ruta para manejar caja
 router.use('/rutas', routerRutas);  // Ruta para manejar Productos en las Rutas
 router.use('/clientes', routerClientes);  // Ruta para manejar Clientes
 router.use('/oficinas', routerOficinas);  // Ruta para manejar Oficinas

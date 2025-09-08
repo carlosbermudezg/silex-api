@@ -10,7 +10,7 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
 // Lista de orígenes permitidos
-const allowedOrigins = ['https://autentic.ec', 'https://app.autentic.ec', 'http://localhost:5173'];
+const allowedOrigins = ['http://localhost:5173', 'http://localhost:2222', 'http://192.168.0.118:2222'];
 
 app.use(cors({
   origin: function (origin, callback) {

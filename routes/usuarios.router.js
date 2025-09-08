@@ -4,7 +4,7 @@ const usuarioController = require('../controllers/usuario.controller');
 const verifyToken = require('../utils/verifyToken');
 
 // Crear un nuevo usuario
-router.post('/', verifyToken, usuarioController.createUsuario);
+router.post('/', usuarioController.createUsuario);
 
 // Obtener todos los usuarios con paginación
 router.get('/', verifyToken, usuarioController.getAllUsuarios);

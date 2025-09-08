@@ -145,12 +145,17 @@ const abrirCaja = catchError(async (req, res) => {
   const { cajaId } = req.body;
   const { userId } = req.user;
 
-  if (!cajaId === undefined) {
+  if (cajaId === undefined) {
     return res.status(400).json({ message: 'Faltan datos necesarios.' });
   }
 
   const resultado = await Caja.abrirCaja(cajaId, userId);
-  return res.status(200).json({ success: true, ...resultado });
+
+  if (!resultado.success) {
+    return res.status(400).json({ success: false, message: resultado.message });
+  }
+
+  return res.status(200).json({ success: true, message: resultado.message });
 });
 
 const getMovimientosByTurno = catchError( async (req, res) => {
@@ -316,6 +321,26 @@ const listarEgresos = catchError(async (req, res) => {
 
   const data = await Caja.listarEgresos(cajaId, filtros, page, limit);
   return res.status(200).json(data);
+});
+
+// Función para obtener los egresos listados por id de turno
+const getOpenTurnos = catchError(async (req, res) => {
+  const {page = 1 , limit = 10, search = ''} = req.query;
+  const offset = (page - 1) * limit;
+  const result = await Caja.getOpenTurnos(limit, offset, search);
+  
+  if (!result) {
+    return res.status(404).json({ message: 'No hay cajas disponibles' });
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Cajas obtenidas correctamente',
+    data: result,
+    total: result.total,
+    page: result.page,
+    totalPages: result.totalPages
+  });
 });
 
 // Función para obtener los egresos listados por id de turno
@@ -517,5 +542,6 @@ module.exports = {
   getAbonosByTurno,
   anularAbono,
   getValidAbonosByTurno,
-  getComprobanteById
+  getComprobanteById,
+  getOpenTurnos
 };

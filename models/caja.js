@@ -34,6 +34,63 @@ const Caja = {
     }
   },
 
+  // Obtener todos los turnos abiertos
+  getOpenTurnos: async (limit, offset, search) => {
+    try {
+      const searchFilter = `%${search || ''}%`;
+  
+      const queryTurnos = `
+        SELECT 
+          turnos.*,
+          cajas.id AS caja_id,
+          cajas."saldoActual" AS saldo,
+          cajas.estado,
+          cajas."rutaId" AS ruta_id,
+          ruta.nombre AS ruta_nombre,
+          CASE 
+            WHEN turnos.sistema = true THEN 'Sistema'
+            ELSE usuarios.nombre
+          END AS usuario_nombre
+        FROM turnos
+        JOIN cajas ON turnos.caja_id = cajas.id
+        JOIN ruta ON cajas."rutaId" = ruta.id
+        LEFT JOIN usuarios ON usuarios.id = turnos.usuario_open
+        WHERE turnos.fecha_cierre IS NULL
+          AND ruta.nombre ILIKE $3
+        ORDER BY turnos.id DESC
+        LIMIT $1 OFFSET $2
+      `;
+  
+      const queryTotal = `
+        SELECT COUNT(*) FROM turnos
+        JOIN cajas ON turnos.caja_id = cajas.id
+        JOIN ruta ON cajas."rutaId" = ruta.id
+        WHERE turnos.fecha_cierre IS NULL
+          AND ruta.nombre ILIKE $1
+      `;
+  
+      const [turnosRes, totalRes] = await Promise.all([
+        pool.query(queryTurnos, [limit, offset, searchFilter]),
+        pool.query(queryTotal, [searchFilter])
+      ]);
+  
+      const totalItems = parseInt(totalRes.rows[0].count, 10);
+      const totalPages = Math.ceil(totalItems / limit);
+      const currentPage = Math.floor(offset / limit) + 1;
+  
+      return {
+        turnos: turnosRes.rows,
+        totalPages,
+        page: currentPage,
+        total: totalItems
+      };
+  
+    } catch (error) {
+      console.error("Error al obtener turnos abiertos:", error);
+      throw error;
+    }
+  },   
+
   // Obtener una caja por su ID de usuario
   getByUserId: async (id) => {
     try {
@@ -230,43 +287,62 @@ const Caja = {
     }
   },
 
-  abrirCaja: async (cajaId, userId) => {
+  abrirCaja: async (cajaId, userId, sistema = false) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      let montoInicial = 0
-      const turnoAnterior = await client.query(
-        `SELECT *
-          FROM turnos
-          WHERE "caja_id" = $1 AND fecha_cierre IS NOT NULL
-          ORDER BY fecha_cierre DESC
-          LIMIT 1;
-        `,
-        [cajaId]
-      );
-
-      montoInicial = montoInicial + turnoAnterior?.rows[0]?.monto_final || 0
-
-      // 1️⃣ Abrir caja de la ruta
-      await client.query(
-        `UPDATE cajas SET estado = 'abierta', "updatedAt" = NOW() WHERE id = $1`,
-        [cajaId]
-      );
-      //Crear el turno
-      await client.query(
-        `INSERT INTO turnos (
-          "caja_id", "usuario_open", "fecha_apertura", "monto_inicial", "observaciones_apertura"
+  
+      // Validar que NO haya un turno abierto
+      const turnoAbierto = await client.query(`
+        SELECT id FROM turnos
+        WHERE "caja_id" = $1 AND fecha_cierre IS NULL
+        LIMIT 1
+      `, [cajaId]);
+  
+      if (turnoAbierto.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return {
+          success: false,
+          message: 'La caja ya tiene un turno abierto.'
+        };
+      }
+  
+      // Obtener último turno cerrado (si existe)
+      const ultimoTurno = await client.query(`
+        SELECT monto_final FROM turnos
+        WHERE "caja_id" = $1 AND fecha_cierre IS NOT NULL
+        ORDER BY fecha_cierre DESC
+        LIMIT 1
+      `, [cajaId]);
+  
+      const montoInicial = ultimoTurno.rows[0]?.monto_final || 0;
+  
+      // Cambiar estado de la caja a 'abierta'
+      await client.query(`
+        UPDATE cajas SET estado = 'abierta', "updatedAt" = NOW()
+        WHERE id = $1
+      `, [cajaId]);
+  
+      // Insertar nuevo turno
+      await client.query(`
+        INSERT INTO turnos (
+          "caja_id", "usuario_open", "fecha_apertura", "monto_inicial", "observaciones_apertura", "sistema"
         )
-        VALUES ($1, $2, NOW(), $3, $4)
-        RETURNING *;`,
-        [cajaId, userId, montoInicial, 'observacion']
-      );
-
+        VALUES ($1, $2, NOW(), $3, $4, $5)
+      `, [
+        cajaId,
+        userId,
+        montoInicial,
+        sistema ? 'Apertura automática por el sistema' : 'Apertura manual',
+        sistema
+      ]);
+  
       await client.query('COMMIT');
-
       return {
+        success: true,
         message: 'Caja abierta correctamente'
       };
+  
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
