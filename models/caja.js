@@ -1152,7 +1152,7 @@ const Caja = {
         `Anulación de pago ID ${pagoId} - Motivo: ${motivo || 'No especificado'}`,
         nuevoSaldo,
         saldoAnterior,
-        -montoPago,
+        montoPago,
         userId,
         clienteId,
         creditoId,
