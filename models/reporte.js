@@ -28,9 +28,13 @@ const Reporte = {
           t.usuario_close,
           t.sistema,
           c.id AS caja_id,
-          r.nombre AS ruta_nombre
+          r.nombre AS ruta_nombre,
+          u.nombre AS usuario_open,
+          us.nombre AS usuario_close
         FROM turnos t
         JOIN cajas c ON t.caja_id = c.id
+        JOIN usuarios u ON t."usuario_open" = u.id
+        JOIN usuarios us ON t."usuario_close" = us.id
         JOIN ruta r ON c."rutaId" = r.id
         WHERE t.fecha_apertura BETWEEN $1 AND $2
         ${rutaFiltro}
@@ -70,9 +74,24 @@ const Reporte = {
       // 3. Asociar los movimientos a cada turno
       const turnosConMovimientos = turnos.map(turno => {
         const movimientosTurno = movimientos.filter(m => m.turnoId === turno.id);
+        const totalAbonos = movimientosTurno.filter( mov => mov.tipo === 'abono').reduce((prev, curr)=> { return prev + Number(curr.monto) }, 0);
+        const totalAportes = movimientosTurno.filter( mov => mov.tipo === 'ingreso').reduce((prev, curr)=> { return prev + Number(curr.monto) }, 0);
+        const totalGastos = movimientosTurno.filter( mov => mov.tipo === 'gasto').reduce((prev, curr)=> { return prev + Number(curr.monto) }, 0);
+        const totalAnulaciones = movimientosTurno.filter( mov => mov.tipo === 'anulacion').reduce((prev, curr)=> { return prev + Number(curr.monto) }, 0);
+        const totalCreditos = movimientosTurno.filter( mov => mov.tipo === 'credito').reduce((prev, curr)=> { return prev + Number(curr.monto) }, 0);
+
+        const totalIngresos = movimientosTurno.filter( mov => mov.category === 'ingreso').reduce((prev, curr)=> { return prev + Number(curr.monto) }, 0);
+        const totalEgresos = movimientosTurno.filter( mov => mov.category === 'egreso').reduce((prev, curr)=> { return prev + Number(curr.monto) }, 0);
         return {
           ...turno,
-          movimientos: movimientosTurno
+          movimientos: movimientosTurno,
+          totalAbonos,
+          totalAportes,
+          totalCreditos,
+          totalGastos,
+          totalAnulaciones,
+          totalIngresos,
+          totalEgresos
         };
       });
   

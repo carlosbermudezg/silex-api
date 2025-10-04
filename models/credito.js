@@ -47,7 +47,6 @@ const Credito = {
         await client.query('ROLLBACK');
         return { error: "La caja está cerrada." };
       }
-      console.log(cajaResult.rows[0])
       if (cajaResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return { error: "La ruta no tiene una caja asignada." };
@@ -92,6 +91,7 @@ const Credito = {
       const interesPagado = 0;
       const saldoCapital = monto;
       const saldoInteres = montoInteresGenerado;
+      const saldo = monto + montoInteresGenerado;
       const fechaVencimiento = new Date();
       fechaVencimiento.setDate(fechaVencimiento.getDate() + plazo_dias);
   
@@ -101,18 +101,18 @@ const Credito = {
           monto, plazo, frecuencia_pago, interes, monto_interes_generado,
           capital_pagado, interes_pagado, saldo_capital, saldo_interes,
           estado, "usuarioId", "clienteId", "productoId",
-          "fechaVencimiento", turno_id, "createdAt", "updatedAt"
+          "fechaVencimiento", turno_id, "createdAt", "updatedAt", saldo
         ) VALUES (
           $1, $2, $3, $4, $5,
           $6, $7, $8, $9,
           'impago', $10, $11, $12,
-          $13, $14, NOW(), NOW()
+          $13, $14, NOW(), NOW(), $15
         ) RETURNING *;
       `, [
         monto, plazo_dias, frecuencia_pago, interes, montoInteresGenerado,
         capitalPagado, interesPagado, saldoCapital, saldoInteres,
         usuarioId, clienteId, productoId,
-        fechaVencimiento, turno.id
+        fechaVencimiento, turno.id, saldo
       ]);
   
       const credito = insertCredito.rows[0];
@@ -256,6 +256,7 @@ const Credito = {
       interes_pagado: row.interes_pagado,
       saldo_capital: row.saldo_capital,
       saldo_interes: row.saldo_interes,
+      saldo: row.saldo,
       productoId: row.productoId,
       cliente: {
         id: row.cliente_id,
@@ -284,6 +285,7 @@ const Credito = {
             c.id,
             c.saldo_capital,
             c.saldo_interes,
+            c.saldo,
             c."fechaVencimiento",
             cl."rutaId"
           FROM creditos c
@@ -609,13 +611,14 @@ const Credito = {
   
     try {
       await client.query('BEGIN');
-  
+      
+      //Obtiene la configuracion general de creditos
       const config = await Config.getConfigDefault();
   
-      if (!config.id) return { error: 'No existe configuración de abonos' };
+      if (!config.id) return { error: 'No existe configuración para realizar el abono' };
   
       const creditoRes = await client.query(`
-        SELECT id, interes, "usuarioId", "clienteId", monto, monto_interes_generado, saldo_capital, saldo_interes
+        SELECT id, interes, "usuarioId", "clienteId", monto, monto_interes_generado, saldo_capital, saldo_interes, saldo
         FROM creditos
         WHERE id = $1
       `, [creditoId]);
@@ -629,25 +632,34 @@ const Credito = {
         monto,
         monto_interes_generado,
         saldo_capital,
-        saldo_interes
+        saldo_interes,
+        saldo
       } = creditoRes.rows[0];
-  
-      const totalDeudaInicial = parseFloat(monto + monto_interes_generado);
+      
+      //Valor total de la deuda inicial - Capital + Interes
+      const totalDeudaInicial = parseFloat((monto + monto_interes_generado)).toFixed(2);
+
+      //Abono máximo de deuda, para evitar renovaciones altas
       const abonoMaximo = parseFloat((totalDeudaInicial * config.porcentaje_abono_maximo / 100).toFixed(2));
-      const deudaActual = parseFloat(Number(saldo_capital) + Number(saldo_interes));
-  
-      if (valor > abonoMaximo) {
+
+      //Deuda actual del credito
+      const deudaActual = parseFloat((Number(saldo)).toFixed(2));
+
+      const monto_abonado = parseFloat(valor.toFixed(2));
+      
+      if (monto_abonado > abonoMaximo) {
         return {
           error: `El abono no puede superar el ${config.porcentaje_abono_maximo}% del valor inicial de la deuda`
         };
       }
   
-      if (valor > deudaActual.toFixed(2)) {
+      if (monto_abonado > deudaActual.toFixed(2)) {
         return {
           error: `El abono no puede superar el valor adeudado: $ ${deudaActual.toFixed(2)}`
         };
       }
-  
+      
+      //Verifica el estado de la caja
       const cajaRes = await client.query(`
         SELECT c.id, c."saldoActual", c.estado
         FROM cajas c
@@ -660,48 +672,57 @@ const Credito = {
       if (cajaRes.rows[0].estado === 'cerrada') {
         return { error: 'La caja está cerrada.' };
       }
+
+      //verifica si tiene un turno activo
       const turno = await Caja.getTurnoById(cajaRes.rows[0].id);
       if (!turno.id) return { error: 'No tienes un turno activo' };
-  
-      const tipoPago = valor <= 0 ? 'visita' : 'abono';
-      const valorRedondeado = parseFloat(valor.toFixed(2));
-  
+      
+      //establece el tipo de pago
+      const tipoPago = monto_abonado <= 0 ? 'visita' : 'abono';
+      
+      //ingresa el pago
       const pagoRes = await client.query(`
         INSERT INTO pagos (
           monto, "user_created_id", "metodoPago", "createdAt", "updatedAt", cordenadas,
           estado, turno_id, cliente_id, tipo
         ) VALUES ($1, $2, $3, NOW(), NOW(), $4, 'aprobado', $5, $6, $7)
         RETURNING id
-      `, [valorRedondeado, userId, metodoPago, location, turno.id, clienteId, tipoPago]);
-  
+      `, [monto_abonado, userId, metodoPago, location, turno.id, clienteId, tipoPago]);
+        
+      //obtiene el id del pago ingresado
       const pagoId = pagoRes.rows[0].id;
-  
+      
+      //Obtiene las cuotas del credito
       const cuotasRes = await client.query(`
-        SELECT id, monto, monto_pagado
+        SELECT id, monto, monto_pagado, estado
         FROM cuotas
-        WHERE "creditoId" = $1 AND estado = 'impago'
+        WHERE "creditoId" = $1
         ORDER BY "fechaPago" ASC
       `, [creditoId]);
-  
+
+      const cuotasImpagas = cuotasRes.rows.filter( cuota => cuota.estado === 'impago' )
+        
+      //obtiene el numero de cuotas generadas
       const numCuotas = cuotasRes.rows.length;
   
-      // Cálculo por cuota basado en capital e interés distribuidos
-      const capitalCuota = parseFloat((monto / numCuotas).toFixed(2));
-      const interesTotal = parseFloat(((monto * interes) / 100).toFixed(2));
-      const interesCuota = parseFloat((interesTotal / numCuotas).toFixed(2));
-      const montoCuota = capitalCuota + interesCuota;
+      // Cálculo del capital de la cuota
+      const capitalCuota = parseFloat((monto / numCuotas));
+      
+      // Cálculo del interes de la cuota
+      const interesCuota = parseFloat((monto_interes_generado / numCuotas));
   
-      let montoRestante = valorRedondeado;
+      let montoRestante = monto_abonado;
       let totalCapitalPagado = 0;
       let totalInteresPagado = 0;
   
-      for (const cuota of cuotasRes.rows) {
+      for (const cuota of cuotasImpagas) {
         if (montoRestante <= 0) break;
   
-        const saldoCuota = parseFloat((cuota.monto - cuota.monto_pagado).toFixed(2));
+        const saldoCuota = parseFloat((cuota.monto - cuota.monto_pagado));
+
+        // es el valor que se aplicara a la cuota que se va a pagar
         const pagoAplicado = parseFloat(Math.min(saldoCuota, montoRestante).toFixed(2));
-  
-        const porcentajePago = parseFloat((pagoAplicado / montoCuota).toFixed(10));
+        const porcentajePago = parseFloat((pagoAplicado / cuota.monto).toFixed(2));
         const capitalPago = parseFloat((capitalCuota * porcentajePago).toFixed(2));
         const interesPago = parseFloat((interesCuota * porcentajePago).toFixed(2));
   
@@ -723,16 +744,17 @@ const Credito = {
         montoRestante -= pagoAplicado;
       }
   
-      const totalCapitalRedondeado = parseFloat(totalCapitalPagado.toFixed(2));
-      const totalInteresRedondeado = parseFloat(totalInteresPagado.toFixed(2));
+      const totalCapitalRedondeado = parseFloat(totalCapitalPagado).toFixed(2);
+      const totalInteresRedondeado = parseFloat(totalInteresPagado).toFixed(2);
   
-      let nuevoSaldoCapital = parseFloat((saldo_capital - totalCapitalRedondeado).toFixed(2));
-      let nuevoSaldoInteres = parseFloat((saldo_interes - totalInteresRedondeado).toFixed(2));
+      let nuevoSaldoCapital = parseFloat((saldo_capital - totalCapitalPagado).toFixed(2));
+      let nuevoSaldoInteres = parseFloat((saldo_interes - totalInteresPagado).toFixed(2));
   
       nuevoSaldoCapital = Math.max(0, nuevoSaldoCapital);
       nuevoSaldoInteres = Math.max(0, nuevoSaldoInteres);
   
-      const estadoCredito = (nuevoSaldoCapital === 0 && nuevoSaldoInteres === 0) ? 'pagado' : 'impago';
+      const saldo_nuevo = saldo - monto_abonado;
+      const estadoCredito = saldo_nuevo <= 0 ? 'pagado' : 'impago';
   
       await client.query(`
         UPDATE creditos
@@ -741,6 +763,7 @@ const Credito = {
           interes_pagado = interes_pagado + $2,
           saldo_capital = $3,
           saldo_interes = $4,
+          saldo = $7,
           estado = $5,
           "updatedAt" = NOW()
         WHERE id = $6
@@ -750,12 +773,13 @@ const Credito = {
         nuevoSaldoCapital,
         nuevoSaldoInteres,
         estadoCredito,
-        creditoId
+        creditoId,
+        saldo_nuevo
       ]);
-  
+
       const cajaId = cajaRes.rows[0].id;
       const saldoAnterior = parseFloat(cajaRes.rows[0].saldoActual);
-      const nuevoSaldo = parseFloat((saldoAnterior + valorRedondeado).toFixed(2));
+      const nuevoSaldo = parseFloat((saldoAnterior + monto_abonado));
   
       await client.query(`
         UPDATE cajas
@@ -764,8 +788,8 @@ const Credito = {
       `, [nuevoSaldo, cajaId]);
   
       const cliente = await Cliente.getNameById(clienteId);
-      const descripcion = valorRedondeado <= 0 ? 'Registro de visita' : 'Registro de pago de crédito';
-      const tipo = valorRedondeado <= 0 ? 'visita' : 'abono';
+      const descripcion = monto_abonado <= 0 ? 'Registro de visita' : 'Registro de pago de crédito';
+      const tipo = monto_abonado <= 0 ? 'visita' : 'abono';
   
       await client.query(`
         INSERT INTO movimientos_caja (
@@ -776,7 +800,7 @@ const Credito = {
           $4, '${tipo}', $5, 'ingreso', $6, $7, $8
         )
       `, [
-        cajaId, nuevoSaldo, saldoAnterior, valorRedondeado,
+        cajaId, nuevoSaldo, saldoAnterior, monto_abonado,
         userId, clienteId, creditoId, turno.id
       ]);
   
