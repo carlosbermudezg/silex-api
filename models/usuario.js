@@ -194,6 +194,40 @@ const Usuario = {
       throw error;
     }
   },
+
+  getByEmailUser: async (email) => {
+    try {
+      const query = `
+        SELECT 
+          u.*,
+          r.id AS ruta_id,
+          r.nombre AS ruta_nombre
+        FROM usuarios u
+        LEFT JOIN ruta r ON u.id = r."userId"
+        WHERE u.correo = $1
+      `;
+      
+      const res = await db.query(query, [email]);
+      
+      if (res.rows.length === 0) return null;
+  
+      // Agrupar las rutas si hay más de una
+      const usuario = {
+        user: res.rows[0],
+        ruta: res.rows
+          .filter(row => row.ruta_id)
+          .map(row => ({
+            id: row.ruta_id,
+            nombre_ruta: row.ruta_nombre
+          }))
+      };
+  
+      return usuario;
+  
+    } catch (error) {
+      throw error;
+    }
+  },
   
   // Verificar que la contraseña es válida (comparando el hash)
   validatePassword: async (password, hashedPassword) => {

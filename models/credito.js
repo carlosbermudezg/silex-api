@@ -272,8 +272,8 @@ const Credito = {
   },
 
   getDataDash: async (rutaId) => {
-    if(rutaId === null){
-      return []
+    if (rutaId === null) {
+      return [];
     }
     try {
       const queryText = `
@@ -340,6 +340,15 @@ const Credito = {
           FROM egresos e
           INNER JOIN turno_activo t ON t.turno_id = e."turno_id"
           WHERE e.estado = 'aprobado'
+        ),
+        cuotas_a_recaudar AS (
+          SELECT 
+            COALESCE(SUM(q.monto - q."monto_pagado"), 0) AS monto_a_recaudar_hoy
+          FROM cuotas q
+          INNER JOIN creditos_filtrados cf ON cf.id = q."creditoId"
+          WHERE 
+            q.estado = 'impago'
+            AND (DATE(q."fechaPago") = CURRENT_DATE OR DATE(q."fechaPago") < CURRENT_DATE)
         )
   
         SELECT 
@@ -359,7 +368,8 @@ const Credito = {
           (SELECT "saldoActual" FROM caja_actual) AS saldo_caja,
           (SELECT turno_id FROM turno_activo) AS turno_id,
           (SELECT recaudacion FROM pagos_aprobados) AS recaudacion,
-          (SELECT gastos FROM egresos_aprobados) AS gastos
+          (SELECT gastos FROM egresos_aprobados) AS gastos,
+          (SELECT monto_a_recaudar_hoy FROM cuotas_a_recaudar) AS monto_a_recaudar_hoy
         FROM clasificacion_creditos;
       `;
   

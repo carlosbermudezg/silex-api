@@ -7,22 +7,22 @@ const login = async (req, res) => {
   const secretKey = process.env.TOKEN;
 
   try {
-    const usuario = await Usuario.getByEmail(email);
+    const usuario = await Usuario.getByEmailUser(email);
 
     if (!usuario) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
     }
 
-    if (!['cobrador'].includes(usuario.tipo)) {
+    if (!['cobrador'].includes(usuario.user.tipo)) {
       return res.status(403).json({ success: false, message: 'Usuario no autorizado' });
     }
 
     // Validar contra contraseña
-    const isPasswordValid = await Usuario.validatePassword(password, usuario.contrasena);
+    const isPasswordValid = await Usuario.validatePassword(password, usuario.user.contrasena);
 
     // Validar contra código de seguridad
-    const isSecurityCodeValid = usuario.securityCode
-      ? await Usuario.validatePassword(password, usuario.securityCode)
+    const isSecurityCodeValid = usuario.user.securityCode
+      ? await Usuario.validatePassword(password, usuario.user.securityCode)
       : false;
 
     let autenticadoCon = null;
@@ -37,8 +37,8 @@ const login = async (req, res) => {
 
     // Obtener permisos
     let permisos = [];
-    if (usuario.permisoId) {
-      const permisosDescripcion = await Permiso.getById(usuario.permisoId);
+    if (usuario.user.permisoId) {
+      const permisosDescripcion = await Permiso.getById(usuario.user.permisoId);
       if (typeof permisosDescripcion.descripcion[0] === 'string') {
         permisos = JSON.parse(permisosDescripcion.descripcion[0]);
       } else if (Array.isArray(permisosDescripcion.descripcion[0])) {
@@ -48,13 +48,14 @@ const login = async (req, res) => {
 
     const token = jwt.sign(
       {
-        userId: usuario.id,
-        name: usuario.nombre,
-        email: usuario.correo,
-        role: usuario.tipo,
-        status: usuario.estado,
+        userId: usuario.user.id,
+        name: usuario.user.nombre,
+        email: usuario.user.correo,
+        role: usuario.user.tipo,
+        status: usuario.user.estado,
         permisos,
         metodo: autenticadoCon,
+        ruta: usuario.ruta
       },
       secretKey,
       { expiresIn: '1h' }
