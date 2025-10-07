@@ -649,6 +649,7 @@ const Credito = {
         SELECT id, interes, "usuarioId", "clienteId", monto, monto_interes_generado, saldo_capital, saldo_interes, saldo
         FROM creditos
         WHERE id = $1
+        FOR UPDATE
       `, [creditoId]);
   
       if (creditoRes.rowCount === 0) return { error: 'El crédito no existe' };
@@ -694,6 +695,7 @@ const Credito = {
         JOIN ruta r ON r.id = c."rutaId"
         WHERE r."userId" = $1
         LIMIT 1
+        FOR UPDATE
       `, [creadorCreditoId]);
   
       if (cajaRes.rowCount === 0) return { error: 'Caja no encontrada' };
@@ -726,6 +728,7 @@ const Credito = {
         FROM cuotas
         WHERE "creditoId" = $1
         ORDER BY "fechaPago" ASC
+        FOR UPDATE
       `, [creditoId]);
 
       const cuotasImpagas = cuotasRes.rows.filter( cuota => cuota.estado === 'impago' )

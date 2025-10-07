@@ -18,7 +18,7 @@ const Reporte = {
   
       // 1. Obtener los turnos con datos de usuario y ruta
       const turnosQuery = `
-        SELECT 
+        SELECT
           t.id,
           t.fecha_apertura,
           t.fecha_cierre,
