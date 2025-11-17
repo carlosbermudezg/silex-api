@@ -14,141 +14,150 @@ const Credito = {
         monto, plazo_dias, frecuencia_pago,
         usuarioId, clienteId, productoId, rutaId
       } = creditoData;
-  
-      // 1️⃣ Validar configuración de la ruta
-      const configQuery = `SELECT * FROM config_credits WHERE "rutaId" = $1;`;
-      const configResult = await client.query(configQuery, [rutaId]);
+
+      // 1️⃣ Configuración por ruta
+      const configResult = await client.query(
+        `SELECT * FROM config_credits WHERE "rutaId" = $1;`,
+        [rutaId]
+      );
+
       if (configResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return { error: "No hay configuración de crédito para la ruta seleccionada." };
       }
-  
+
       const config = configResult.rows[0];
-  
+
       // 2️⃣ Validaciones
       if (monto < config.monto_minimo || monto > config.monto_maximo) {
         await client.query('ROLLBACK');
         return { error: `El monto debe estar entre ${config.monto_minimo} y ${config.monto_maximo}` };
       }
-  
+
       if (plazo_dias < config.plazo_minimo || plazo_dias > config.plazo_maximo) {
         await client.query('ROLLBACK');
         return { error: `El plazo debe estar entre ${config.plazo_minimo} y ${config.plazo_maximo} días.` };
       }
-  
+
       if (!config.frecuencia_pago.includes(frecuencia_pago)) {
         await client.query('ROLLBACK');
         return { error: `La frecuencia de pago '${frecuencia_pago}' no está permitida para esta ruta.` };
       }
-  
-      // 3️⃣ Caja de ruta
-      const cajaResult = await client.query(`SELECT id, "saldoActual", estado FROM cajas WHERE "rutaId" = $1;`, [rutaId]);
-      if (cajaResult.rows[0].estado === 'cerrada') {
-        await client.query('ROLLBACK');
-        return { error: "La caja está cerrada." };
-      }
+
+      // 3️⃣ Caja
+      const cajaResult = await client.query(
+        `SELECT id, "saldoActual", estado FROM cajas WHERE "rutaId" = $1;`,
+        [rutaId]
+      );
+
       if (cajaResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return { error: "La ruta no tiene una caja asignada." };
       }
-  
+
+      if (cajaResult.rows[0].estado === 'cerrada') {
+        await client.query('ROLLBACK');
+        return { error: "La caja está cerrada." };
+      }
+
       const cajaId = cajaResult.rows[0].id;
       const saldoDisponible = parseFloat(cajaResult.rows[0].saldoActual);
+
       if (saldoDisponible < monto) {
         await client.query('ROLLBACK');
         return { error: "Saldo insuficiente en la caja para otorgar este crédito." };
       }
-  
+
+      // 4️⃣ Cliente válido
       const cliente = await Cliente.getById(clienteId);
-      if (!cliente?.id || cliente.updated == false) {
+      if (!cliente?.id || cliente.updated === false) {
         await client.query('ROLLBACK');
         return { error: "El cliente no es válido o debe ser actualizado." };
       }
-  
+
+      // 5️⃣ Turno
       const turno = await Caja.getTurnoById(cajaId);
       if (!turno?.id) {
         await client.query('ROLLBACK');
         return { error: "No tienes un turno activo." };
       }
-  
-      // 4️⃣ Créditos activos
-      const creditosActivosResult = await client.query(`
+
+      // 6️⃣ Créditos activos del cliente
+      const activosResult = await client.query(`
         SELECT COUNT(*) AS total 
         FROM creditos 
         WHERE "clienteId" = $1 AND estado = 'impago';
       `, [clienteId]);
-  
-      const creditosActivos = parseInt(creditosActivosResult.rows[0].total);
-      if (creditosActivos >= config.max_credits) {
+
+      if (parseInt(activosResult.rows[0].total) >= config.max_credits) {
         await client.query('ROLLBACK');
         return { error: "El cliente ya alcanzó el límite de créditos permitidos." };
       }
-  
-      // 5️⃣ Cálculos
+
+      // 7️⃣ Cálculo de intereses y saldo final
       const interes = config.interes;
       const montoInteresGenerado = (monto * interes) / 100;
-      const capitalPagado = 0;
-      const interesPagado = 0;
-      const saldoCapital = monto;
-      const saldoInteres = montoInteresGenerado;
       const saldo = monto + montoInteresGenerado;
+
       const fechaVencimiento = new Date();
       fechaVencimiento.setDate(fechaVencimiento.getDate() + plazo_dias);
-  
-      // 6️⃣ Insertar crédito
+
+      // 8️⃣ Insertar crédito SIN CAMPOS ELIMINADOS
       const insertCredito = await client.query(`
         INSERT INTO creditos (
           monto, plazo, frecuencia_pago, interes, monto_interes_generado,
-          capital_pagado, interes_pagado, saldo_capital, saldo_interes,
           estado, "usuarioId", "clienteId", "productoId",
           "fechaVencimiento", turno_id, "createdAt", "updatedAt", saldo
         ) VALUES (
           $1, $2, $3, $4, $5,
-          $6, $7, $8, $9,
-          'impago', $10, $11, $12,
-          $13, $14, NOW(), NOW(), $15
+          'impago', $6, $7, $8,
+          $9, $10, NOW(), NOW(), $11
         ) RETURNING *;
       `, [
         monto, plazo_dias, frecuencia_pago, interes, montoInteresGenerado,
-        capitalPagado, interesPagado, saldoCapital, saldoInteres,
         usuarioId, clienteId, productoId,
         fechaVencimiento, turno.id, saldo
       ]);
-  
+
       const credito = insertCredito.rows[0];
-  
-      // 7️⃣ Actualizar caja
-      const saldoActual = saldoDisponible - monto;
+
+      // 9️⃣ Actualizar saldo de caja
       await client.query(`
         UPDATE cajas SET "saldoActual" = $1 WHERE id = $2;
-      `, [saldoActual, cajaId]);
-  
-      // 8️⃣ Movimiento
+      `, [saldoDisponible - monto, cajaId]);
+
+      // 🔟 Registrar movimiento
       await client.query(`
         INSERT INTO movimientos_caja (
           "cajaId", tipo, monto, descripcion,
-          saldo, saldo_anterior, category, "usuarioId", "clienteId", "creditoId", "turnoId",
+          saldo, saldo_anterior, category,
+          "usuarioId", "clienteId", "creditoId", "turnoId",
           "createdAt", "updatedAt"
         ) VALUES (
           $1, 'credito', $2, $3,
-          $4, $5, 'egreso', $6, $7, $8, $9,
+          $4, $5, 'egreso',
+          $6, $7, $8, $9,
           NOW(), NOW()
         );
       `, [
-        cajaId, monto, `Desembolso de crédito - (CL${cliente.id}: ${cliente?.nombres})`,
-        saldoActual, saldoDisponible, usuarioId, clienteId, credito.id, turno.id
+        cajaId, monto, `Desembolso de crédito - (CL${cliente.id}: ${cliente.nombres})`,
+        saldoDisponible - monto, saldoDisponible,
+        usuarioId, clienteId, credito.id, turno.id
       ]);
-  
-      // 9️⃣ Cuotas
-      const cuotaMonto = await Credito.generarCuotas(credito.id, monto, interes, plazo_dias, frecuencia_pago);
-  
+
+      // 1️⃣1️⃣ Generar cuotas
+      const cuotaMonto = await Credito.generarCuotas(
+        credito.id, monto, interes, plazo_dias, frecuencia_pago
+      );
+
       await client.query('COMMIT');
+
       return {
         credito,
         cuotaMonto,
         location: cliente.coordenadasCobro
       };
-  
+
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Error al crear crédito:', error);
@@ -156,7 +165,7 @@ const Credito = {
     } finally {
       client.release();
     }
-  },  
+  },
 
   // modelo/Credito.js
   getAll: async (limit, offset, searchTerm = '', userId, oficinaId, rutaId) => {
@@ -283,8 +292,6 @@ const Credito = {
         creditos_filtrados AS (
           SELECT 
             c.id,
-            c.saldo_capital,
-            c.saldo_interes,
             c.saldo,
             c."fechaVencimiento",
             cl."rutaId"
@@ -353,17 +360,17 @@ const Credito = {
   
         SELECT 
           COUNT(*) AS total_impagos,
-          COALESCE(SUM(saldo_capital + saldo_interes), 0) AS cartera,
+          COALESCE(SUM(saldo), 0) AS cartera,
   
           COUNT(*) FILTER (WHERE clasificacion = 'alto_riesgo') AS creditos_alto_riesgo,
           COUNT(*) FILTER (WHERE clasificacion = 'vencido') AS creditos_vencidos,
           COUNT(*) FILTER (WHERE clasificacion = 'atrasado') AS creditos_atrasados,
           COUNT(*) FILTER (WHERE clasificacion = 'al_dia') AS creditos_al_dia,
   
-          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'alto_riesgo') AS cartera_alto_riesgo,
-          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'vencido') AS cartera_vencidos,
-          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'atrasado') AS cartera_atrasados,
-          SUM(saldo_capital + saldo_interes) FILTER (WHERE clasificacion = 'al_dia') AS cartera_al_dia,
+          SUM(saldo) FILTER (WHERE clasificacion = 'alto_riesgo') AS cartera_alto_riesgo,
+          SUM(saldo) FILTER (WHERE clasificacion = 'vencido') AS cartera_vencidos,
+          SUM(saldo) FILTER (WHERE clasificacion = 'atrasado') AS cartera_atrasados,
+          SUM(saldo) FILTER (WHERE clasificacion = 'al_dia') AS cartera_al_dia,
   
           (SELECT "saldoActual" FROM caja_actual) AS saldo_caja,
           (SELECT turno_id FROM turno_activo) AS turno_id,
