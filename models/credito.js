@@ -277,129 +277,154 @@ const Credito = {
   },
 
   getDataDash: async (rutaId) => {
+    // Si no se envía rutaId, devolvemos un arreglo vacío.
     if (!rutaId) return [];
 
     try {
-      const queryText = `
+
+      const query = `
+        ---------------------------------------------------------
+        -- 1) OBTENER CONFIGURACIÓN GENERAL (days_to_yellow, days_to_red)
+        ---------------------------------------------------------
         WITH config AS (
           SELECT days_to_yellow, days_to_red 
           FROM config_default 
           LIMIT 1
         ),
 
-        creditos_filtrados AS (
-          SELECT 
-            c.id,
-            c.saldo,
-            c."fechaVencimiento"
+        ---------------------------------------------------------
+        -- 2) LISTA DE CRÉDITOS ACTIVOS (estado = impago) DE LA RUTA
+        ---------------------------------------------------------
+        creditos_activos AS (
+          SELECT c.id, c.saldo
           FROM creditos c
           INNER JOIN clientes cl ON cl.id = c."clienteId"
-          WHERE c.estado = 'impago' 
-            AND cl."rutaId" = $1
+          WHERE c.estado = 'impago'                -- crédito aún no cancelado
+          AND cl."rutaId" = $1                     -- solo créditos de esta ruta
         ),
 
-        max_dias_atraso AS (
+        ---------------------------------------------------------
+        -- 3) CALCULAR EL MÁXIMO ATRASO POR CADA CRÉDITO
+        --    Revisamos sus cuotas impagas y calculamos días de atraso.
+        ---------------------------------------------------------
+        max_atraso AS (
           SELECT 
             q."creditoId",
-            MAX(DATE_PART('day', CURRENT_DATE - q."fechaPago")) AS dias_atraso
+            -- GREATEST asegura que si no hay atraso, se deje en 0
+            MAX(GREATEST(0, DATE_PART('day', CURRENT_DATE - q."fechaPago"))) AS dias_atraso
           FROM cuotas q
-          INNER JOIN creditos_filtrados cf ON cf.id = q."creditoId"
+          INNER JOIN creditos_activos c ON c.id = q."creditoId"
           WHERE q.estado = 'impago'
           GROUP BY q."creditoId"
         ),
 
-        clasificacion_creditos AS (
-          SELECT 
-            cf.id AS credito_id,
-            cf.saldo,
+        ---------------------------------------------------------
+        -- 4) CLASIFICAR CRÉDITO SEGÚN SU DÍAS DE ATRASO
+        --    al_dia       = sin cuotas atrasadas
+        --    atrasado     = 1 día de atraso o más
+        --    alto_riesgo  = días >= days_to_yellow
+        --    vencido      = días >= days_to_red
+        ---------------------------------------------------------
+        clasificacion AS (
+          SELECT
+            c.id AS credito_id,
+            c.saldo,
+            COALESCE(m.dias_atraso, 0) AS dias_atraso,
             CASE
-              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_red 
-                  OR cf."fechaVencimiento" < CURRENT_DATE 
-              THEN 'vencido'
-
-              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_yellow 
-              THEN 'alto_riesgo'
-
-              WHEN COALESCE(mda.dias_atraso, 0) > 0 
-              THEN 'atrasado'
-
+              WHEN COALESCE(m.dias_atraso, 0) >= cfg.days_to_red THEN 'vencido'
+              WHEN COALESCE(m.dias_atraso, 0) >= cfg.days_to_yellow THEN 'alto_riesgo'
+              WHEN COALESCE(m.dias_atraso, 0) >= 1 THEN 'atrasado'
               ELSE 'al_dia'
-            END AS clasificacion
-          FROM creditos_filtrados cf
-          LEFT JOIN max_dias_atraso mda ON mda."creditoId" = cf.id
+            END AS estado_credito
+          FROM creditos_activos c
+          LEFT JOIN max_atraso m ON m."creditoId" = c.id
           CROSS JOIN config cfg
         ),
 
-        caja_actual AS (
-          SELECT id, "saldoActual"
+        ---------------------------------------------------------
+        -- 5) ESTADO Y SALDO DE LA CAJA
+        ---------------------------------------------------------
+        caja AS (
+          SELECT "saldoActual", estado
           FROM cajas
           WHERE "rutaId" = $1
           LIMIT 1
         ),
 
-        turno_activo AS (
-          SELECT t.id AS turno_id
-          FROM turnos t
-          INNER JOIN caja_actual c ON c.id = t."caja_id"
-          WHERE t."fecha_cierre" IS NULL
-          LIMIT 1
+        ---------------------------------------------------------
+        -- 6) TOTAL DE RECAUDACIÓN DEL DÍA
+        ---------------------------------------------------------
+        recaudacion_diaria AS (
+          SELECT COALESCE(SUM(monto), 0) AS total
+          FROM pagos
+          WHERE estado = 'aprobado'
+          AND DATE("createdAt") = CURRENT_DATE
         ),
 
-        pagos_aprobados AS (
-          SELECT COALESCE(SUM(p.monto), 0) AS recaudacion
-          FROM pagos p
-          INNER JOIN turno_activo t ON t.turno_id = p."turno_id"
-          WHERE p.estado = 'aprobado'
+        ---------------------------------------------------------
+        -- 7) TOTAL DE EGRESOS DEL DÍA
+        ---------------------------------------------------------
+        gastos_diarios AS (
+          SELECT COALESCE(SUM(monto), 0) AS total
+          FROM egresos
+          WHERE estado = 'aprobado'
+          AND DATE("createdAt") = CURRENT_DATE
         ),
 
-        egresos_aprobados AS (
-          SELECT COALESCE(SUM(e.monto), 0) AS gastos
-          FROM egresos e
-          INNER JOIN turno_activo t ON t.turno_id = e."turno_id"
-          WHERE e.estado = 'aprobado'
-        ),
-
-        cuotas_a_recaudar AS (
+        ---------------------------------------------------------
+        -- 8) COBROS PENDIENTES
+        --    Total de cuotas impagas con fecha de pago HOY o anterior
+        ---------------------------------------------------------
+        cobros_pendientes AS (
           SELECT 
-            COALESCE(SUM(q.monto - q."monto_pagado"), 0) AS monto_a_recaudar_hoy
+            COALESCE(SUM(q.monto - q."monto_pagado"), 0) AS total
           FROM cuotas q
-          INNER JOIN creditos_filtrados cf ON cf.id = q."creditoId"
-          WHERE 
-            q.estado = 'impago'
-            AND q."fechaPago"::date <= CURRENT_DATE
+          INNER JOIN creditos_activos c ON c.id = q."creditoId"
+          WHERE q.estado = 'impago'
+          AND DATE(q."fechaPago") <= CURRENT_DATE
         )
 
-        SELECT 
-          COUNT(*) AS total_impagos,
-          COALESCE(SUM(saldo), 0) AS cartera,
+        ---------------------------------------------------------
+        -- 9) SELECCIONAR TODAS LAS MÉTRICAS DEL DASHBOARD
+        ---------------------------------------------------------
+        SELECT
+          -- Número total de créditos activos
+          (SELECT COUNT(*) FROM creditos_activos) AS creditos_activos,
 
-          COUNT(*) FILTER (WHERE clasificacion = 'alto_riesgo') AS creditos_alto_riesgo,
-          COUNT(*) FILTER (WHERE clasificacion = 'vencido') AS creditos_vencidos,
-          COUNT(*) FILTER (WHERE clasificacion = 'atrasado') AS creditos_atrasados,
-          COUNT(*) FILTER (WHERE clasificacion = 'al_dia') AS creditos_al_dia,
+          -- Clasificación de créditos
+          COUNT(*) FILTER (WHERE estado_credito = 'al_dia') AS creditos_al_dia,
+          COUNT(*) FILTER (WHERE estado_credito = 'atrasado') AS creditos_atrasados,
+          COUNT(*) FILTER (WHERE estado_credito = 'alto_riesgo') AS creditos_alto_riesgo,
+          COUNT(*) FILTER (WHERE estado_credito = 'vencido') AS creditos_vencidos,
 
-          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'alto_riesgo'), 0) AS cartera_alto_riesgo,
-          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'vencido'), 0) AS cartera_vencidos,
-          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'atrasado'), 0) AS cartera_atrasados,
-          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'al_dia'), 0) AS cartera_al_dia,
+          -- Total de cartera (suma de saldos)
+          SUM(saldo) AS cartera_total,
 
-          (SELECT "saldoActual" FROM caja_actual) AS saldo_caja,
-          (SELECT turno_id FROM turno_activo) AS turno_id,
-          (SELECT recaudacion FROM pagos_aprobados) AS recaudacion,
-          (SELECT gastos FROM egresos_aprobados) AS gastos,
-          (SELECT monto_a_recaudar_hoy FROM cuotas_a_recaudar) AS monto_a_recaudar_hoy
+          -- Datos de caja
+          (SELECT "saldoActual" FROM caja) AS saldo_caja,
+          (SELECT estado FROM caja) AS estado_caja,
 
-        FROM clasificacion_creditos;
+          -- Totales del día
+          (SELECT total FROM recaudacion_diaria) AS recaudacion_hoy,
+          (SELECT total FROM gastos_diarios) AS gastos_hoy,
+
+          -- Suma total de cuotas impagas hasta hoy
+          (SELECT total FROM cobros_pendientes) AS cobros_pendientes
+
+        FROM clasificacion;
       `;
 
-      const data = await db.query(queryText, [rutaId]);
-      return data.rows[0] ?? {};
+      // Ejecutar la consulta con rutaId como parámetro
+      const result = await db.query(query, [rutaId]);
+
+      // Devolver la primera fila que contiene todas las métricas
+      return result.rows[0];
 
     } catch (error) {
-      console.error("Error al obtener los datos del dashboard:", error);
+      console.error("Error en getDataDash:", error);
       throw error;
     }
-  },
+  }, 
 
   getDataDashBars: async (frecuencia, rutaId) => {
     if(rutaId === null){
