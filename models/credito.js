@@ -408,7 +408,7 @@ const Credito = {
       `;
 
       // Ejecutar la consulta con rutaId como parámetro
-      const result = await db.query(query, [rutaId]);
+      const result = await db.query(query, [rutaId.id]);
 
       // Devolver la primera fila que contiene todas las métricas
       return result.rows[0];
