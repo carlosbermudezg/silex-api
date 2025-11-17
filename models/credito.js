@@ -283,34 +283,33 @@ const Credito = {
     try {
 
       const query = `
+        WITH 
         ---------------------------------------------------------
-        -- 1) OBTENER CONFIGURACIÓN GENERAL (days_to_yellow, days_to_red)
+        -- 1) CONFIGURACIÓN DE DÍAS DE RIESGO
         ---------------------------------------------------------
-        WITH config AS (
-          SELECT days_to_yellow, days_to_red 
-          FROM config_default 
+        config AS (
+          SELECT days_to_yellow, days_to_red
+          FROM config_default
           LIMIT 1
         ),
 
         ---------------------------------------------------------
-        -- 2) LISTA DE CRÉDITOS ACTIVOS (estado = impago) DE LA RUTA
+        -- 2) CRÉDITOS ACTIVOS DE LA RUTA
         ---------------------------------------------------------
         creditos_activos AS (
           SELECT c.id, c.saldo
           FROM creditos c
           INNER JOIN clientes cl ON cl.id = c."clienteId"
-          WHERE c.estado = 'impago'                -- crédito aún no cancelado
-          AND cl."rutaId" = $1                     -- solo créditos de esta ruta
+          WHERE c.estado = 'impago'
+          AND cl."rutaId" = $1
         ),
 
         ---------------------------------------------------------
-        -- 3) CALCULAR EL MÁXIMO ATRASO POR CADA CRÉDITO
-        --    Revisamos sus cuotas impagas y calculamos días de atraso.
+        -- 3) MÁXIMO ATRASO DE CADA CRÉDITO
         ---------------------------------------------------------
         max_atraso AS (
           SELECT 
             q."creditoId",
-            -- GREATEST asegura que si no hay atraso, se deje en 0
             MAX(GREATEST(0, DATE_PART('day', CURRENT_DATE - q."fechaPago"))) AS dias_atraso
           FROM cuotas q
           INNER JOIN creditos_activos c ON c.id = q."creditoId"
@@ -319,11 +318,7 @@ const Credito = {
         ),
 
         ---------------------------------------------------------
-        -- 4) CLASIFICAR CRÉDITO SEGÚN SU DÍAS DE ATRASO
-        --    al_dia       = sin cuotas atrasadas
-        --    atrasado     = 1 día de atraso o más
-        --    alto_riesgo  = días >= days_to_yellow
-        --    vencido      = días >= days_to_red
+        -- 4) CLASIFICACIÓN DEL CRÉDITO SEGÚN ATRASO
         ---------------------------------------------------------
         clasificacion AS (
           SELECT
@@ -342,7 +337,7 @@ const Credito = {
         ),
 
         ---------------------------------------------------------
-        -- 5) ESTADO Y SALDO DE LA CAJA
+        -- 5) CAJA DE LA RUTA
         ---------------------------------------------------------
         caja AS (
           SELECT "saldoActual", estado
@@ -352,7 +347,7 @@ const Credito = {
         ),
 
         ---------------------------------------------------------
-        -- 6) TOTAL DE RECAUDACIÓN DEL DÍA
+        -- 6) RECAUDACIÓN DIARIA
         ---------------------------------------------------------
         recaudacion_diaria AS (
           SELECT COALESCE(SUM(monto), 0) AS total
@@ -362,7 +357,7 @@ const Credito = {
         ),
 
         ---------------------------------------------------------
-        -- 7) TOTAL DE EGRESOS DEL DÍA
+        -- 7) GASTOS DIARIOS
         ---------------------------------------------------------
         gastos_diarios AS (
           SELECT COALESCE(SUM(monto), 0) AS total
@@ -372,8 +367,7 @@ const Credito = {
         ),
 
         ---------------------------------------------------------
-        -- 8) COBROS PENDIENTES
-        --    Total de cuotas impagas con fecha de pago HOY o anterior
+        -- 8) COBROS PENDIENTES (cuotas impagas hasta hoy)
         ---------------------------------------------------------
         cobros_pendientes AS (
           SELECT 
@@ -385,22 +379,21 @@ const Credito = {
         )
 
         ---------------------------------------------------------
-        -- 9) SELECCIONAR TODAS LAS MÉTRICAS DEL DASHBOARD
+        -- 9) RESULTADOS FINALES DEL DASHBOARD
         ---------------------------------------------------------
         SELECT
-          -- Número total de créditos activos
           (SELECT COUNT(*) FROM creditos_activos) AS creditos_activos,
 
-          -- Clasificación de créditos
+          -- Clasificación
           COUNT(*) FILTER (WHERE estado_credito = 'al_dia') AS creditos_al_dia,
           COUNT(*) FILTER (WHERE estado_credito = 'atrasado') AS creditos_atrasados,
           COUNT(*) FILTER (WHERE estado_credito = 'alto_riesgo') AS creditos_alto_riesgo,
           COUNT(*) FILTER (WHERE estado_credito = 'vencido') AS creditos_vencidos,
 
-          -- Total de cartera (suma de saldos)
+          -- Saldos
           SUM(saldo) AS cartera_total,
 
-          -- Datos de caja
+          -- Caja
           (SELECT "saldoActual" FROM caja) AS saldo_caja,
           (SELECT estado FROM caja) AS estado_caja,
 
@@ -408,7 +401,7 @@ const Credito = {
           (SELECT total FROM recaudacion_diaria) AS recaudacion_hoy,
           (SELECT total FROM gastos_diarios) AS gastos_hoy,
 
-          -- Suma total de cuotas impagas hasta hoy
+          -- Pendientes
           (SELECT total FROM cobros_pendientes) AS cobros_pendientes
 
         FROM clasificacion;
