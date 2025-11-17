@@ -1076,7 +1076,7 @@ const Caja = {
   
       // 3. Actualizar crédito
       const creditoRes = await client.query(`
-        SELECT saldo_capital, saldo_interes, capital_pagado, interes_pagado
+        SELECT saldo_capital, saldo_interes, capital_pagado, interes_pagado, saldo
         FROM creditos
         WHERE id = $1
       `, [creditoId]);
@@ -1100,6 +1100,7 @@ const Caja = {
             saldo_interes = $2,
             capital_pagado = $3,
             interes_pagado = $4,
+            saldo = $7
             estado = $5,
             "updatedAt" = NOW()
         WHERE id = $6
@@ -1109,7 +1110,8 @@ const Caja = {
         nuevoCapitalPagado,
         nuevoInteresPagado,
         estadoCredito,
-        creditoId
+        creditoId,
+        cr.saldo + montoPago
       ]);
   
       // 4. Actualizar saldo en caja
