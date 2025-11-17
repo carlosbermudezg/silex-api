@@ -1020,100 +1020,84 @@ const Caja = {
 
   anularPago: async (pagoId, userId, motivo) => {
     const client = await pool.connect();
-  
+
     try {
       await client.query('BEGIN');
-  
+
       // 1. Obtener desglose del pago
       const pagoRes = await client.query(`
         SELECT p.monto, p.turno_id, p."user_created_id", p."cliente_id", c."creditoId",
-               pc."cuotaId", pc.monto_abonado, pc.capital_pagado, pc.interes_pagado
+              pc."cuotaId", pc.monto_abonado
         FROM pagos p
         JOIN pagos_cuotas pc ON pc."pagoId" = p.id
         JOIN cuotas c ON c.id = pc."cuotaId"
         WHERE p.id = $1
       `, [pagoId]);
-  
+
       if (pagoRes.rowCount === 0) {
         await client.query('ROLLBACK');
         return { error: 'Pago no encontrado o no asociado a cuotas' };
       }
-  
-      let totalCapitalAjustar = 0;
-      let totalInteresAjustar = 0;
+
       const cuotasMap = new Map();
       let clienteId = null;
       let creditoId = null;
       let turnoId = null;
       let montoPago = 0;
-  
+
       for (const row of pagoRes.rows) {
         const cuotaId = row.cuotaId;
-        const capitalPagado = parseFloat(row.capital_pagado || 0);
-        const interesPagado = parseFloat(row.interes_pagado || 0);
         const montoAbonado = parseFloat(row.monto_abonado || 0);
-  
-        totalCapitalAjustar += capitalPagado;
-        totalInteresAjustar += interesPagado;
+
         cuotasMap.set(cuotaId, (cuotasMap.get(cuotaId) || 0) + montoAbonado);
-  
+
         clienteId = row.cliente_id;
         creditoId = row.creditoId;
         turnoId = row.turno_id;
         montoPago = parseFloat(row.monto || 0);
       }
-  
+
       // 2. Revertir montos en cuotas
       for (const [cuotaId, montoAbonado] of cuotasMap.entries()) {
         await client.query(`
           UPDATE cuotas
-          SET monto_pagado = monto_pagado - $1,
-              estado = CASE WHEN monto_pagado - $1 < monto THEN 'impago' ELSE estado END,
-              "updatedAt" = NOW()
+          SET 
+            monto_pagado = monto_pagado - $1,
+            estado = CASE WHEN monto_pagado - $1 < monto THEN 'impago' ELSE estado END,
+            "updatedAt" = NOW()
           WHERE id = $2
         `, [montoAbonado, cuotaId]);
       }
-  
-      // 3. Actualizar crédito
+
+      // 3. Actualizar crédito (solo saldo)
       const creditoRes = await client.query(`
-        SELECT saldo_capital, saldo_interes, capital_pagado, interes_pagado, saldo
+        SELECT saldo
         FROM creditos
         WHERE id = $1
       `, [creditoId]);
-  
+
       if (creditoRes.rowCount === 0) {
         await client.query('ROLLBACK');
         return { error: 'Crédito no encontrado' };
       }
-  
-      const cr = creditoRes.rows[0];
-      const nuevoSaldoCapital = Math.max(0, parseFloat(cr.saldo_capital) + totalCapitalAjustar);
-      const nuevoSaldoInteres = Math.max(0, parseFloat(cr.saldo_interes) + totalInteresAjustar);
-      const nuevoCapitalPagado = Math.max(0, parseFloat(cr.capital_pagado) - totalCapitalAjustar);
-      const nuevoInteresPagado = Math.max(0, parseFloat(cr.interes_pagado) - totalInteresAjustar);
-  
-      const estadoCredito = (nuevoSaldoCapital > 0 || nuevoSaldoInteres > 0) ? 'impago' : 'pagado';
-  
+
+      const saldoActual = parseFloat(creditoRes.rows[0].saldo);
+      const nuevoSaldoCredito = saldoActual + montoPago;
+
+      const estadoCredito = nuevoSaldoCredito > 0 ? 'impago' : 'pagado';
+
       await client.query(`
         UPDATE creditos
-        SET saldo_capital = $1,
-            saldo_interes = $2,
-            capital_pagado = $3,
-            interes_pagado = $4,
-            saldo = $7,
-            estado = $5,
+        SET saldo = $1,
+            estado = $2,
             "updatedAt" = NOW()
-        WHERE id = $6
+        WHERE id = $3
       `, [
-        nuevoSaldoCapital,
-        nuevoSaldoInteres,
-        nuevoCapitalPagado,
-        nuevoInteresPagado,
+        nuevoSaldoCredito,
         estadoCredito,
-        creditoId,
-        cr.saldo + montoPago
+        creditoId
       ]);
-  
+
       // 4. Actualizar saldo en caja
       const cajaRes = await client.query(`
         SELECT c.id, c."saldoActual"
@@ -1122,29 +1106,29 @@ const Caja = {
         WHERE r."userId" = $1
         LIMIT 1
       `, [pagoRes.rows[0].user_created_id]);
-  
+
       if (cajaRes.rowCount === 0) {
         await client.query('ROLLBACK');
         return { error: 'Caja no encontrada' };
       }
-  
+
       const cajaId = cajaRes.rows[0].id;
       const saldoAnterior = parseFloat(cajaRes.rows[0].saldoActual);
-      const nuevoSaldo = saldoAnterior - montoPago;
-  
+      const nuevoSaldoCaja = saldoAnterior - montoPago;
+
       await client.query(`
         UPDATE cajas
         SET "saldoActual" = $1,
             "updatedAt" = NOW()
         WHERE id = $2
-      `, [nuevoSaldo, cajaId]);
-  
+      `, [nuevoSaldoCaja, cajaId]);
+
       // 5. Eliminar pagos_cuotas
       await client.query(`
         DELETE FROM pagos_cuotas
         WHERE "pagoId" = $1
       `, [pagoId]);
-  
+
       // 6. Registrar movimiento de anulación
       await client.query(`
         INSERT INTO movimientos_caja (
@@ -1157,7 +1141,7 @@ const Caja = {
       `, [
         cajaId,
         `Anulación de pago ID ${pagoId} - Motivo: ${motivo || 'No especificado'}`,
-        nuevoSaldo,
+        nuevoSaldoCaja,
         saldoAnterior,
         montoPago,
         userId,
@@ -1165,7 +1149,7 @@ const Caja = {
         creditoId,
         turnoId
       ]);
-  
+
       // 7. Marcar pago como anulado
       await client.query(`
         UPDATE pagos
@@ -1175,10 +1159,10 @@ const Caja = {
             "updatedAt" = NOW()
         WHERE id = $1
       `, [pagoId, userId, motivo]);
-  
+
       await client.query('COMMIT');
       return { success: true, message: 'Pago anulado correctamente' };
-  
+
     } catch (err) {
       await client.query('ROLLBACK');
       console.error(err);
@@ -1186,8 +1170,8 @@ const Caja = {
     } finally {
       client.release();
     }
-  },            
-
+  },
+           
   getAllEgresos: async (offset, limit, userId, oficinaId, rutaId, searchTerm = '') => {
     const search = `%${searchTerm}%`;
     let cajaUserIds = [];
@@ -1372,7 +1356,6 @@ const Caja = {
   
     return pagoData.rows[0]; // solo devuelves los datos
   }
-  
   
 };
 

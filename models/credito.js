@@ -687,87 +687,84 @@ const Credito = {
   },
 
   // Actualizar un crédito
-  update: async (id, updateData) => {
-    const queryText = `
-      UPDATE creditos 
-      SET monto = $1, "fechaInicio" = $2, "fechaVencimiento" = $3, estado = $4, saldo = $5, "updatedAt" = NOW()
-      WHERE id = $6 RETURNING *;
-    `;
-    const values = [
-      updateData.monto,
-      updateData.fechaInicio,
-      updateData.fechaVencimiento,
-      updateData.estado,
-      updateData.saldo,
-      id
-    ];
-    const { rows } = await db.query(queryText, values);
-    return rows[0];
-  },
+  // update: async (id, updateData) => {
+  //   const queryText = `
+  //     UPDATE creditos 
+  //     SET monto = $1, "fechaInicio" = $2, "fechaVencimiento" = $3, estado = $4, saldo = $5, "updatedAt" = NOW()
+  //     WHERE id = $6 RETURNING *;
+  //   `;
+  //   const values = [
+  //     updateData.monto,
+  //     updateData.fechaInicio,
+  //     updateData.fechaVencimiento,
+  //     updateData.estado,
+  //     updateData.saldo,
+  //     id
+  //   ];
+  //   const { rows } = await db.query(queryText, values);
+  //   return rows[0];
+  // },
 
   // Eliminar un crédito
-  delete: async (id) => {
-    const queryText = `DELETE FROM creditos WHERE id = $1 RETURNING *;`;
-    const { rows } = await db.query(queryText, [id]);
-    return rows.length ? rows[0] : null;
-  },
+  // delete: async (id) => {
+  //   const queryText = `DELETE FROM creditos WHERE id = $1 RETURNING *;`;
+  //   const { rows } = await db.query(queryText, [id]);
+  //   return rows.length ? rows[0] : null;
+  // },
 
   // Crear un pago
   createPago: async ({ creditoId, valor, metodoPago, userId, location }) => {
     const client = await db.connect();
-  
+
     try {
       await client.query('BEGIN');
-      
-      //Obtiene la configuracion general de creditos
+
+      // Obtener configuración
       const config = await Config.getConfigDefault();
-  
       if (!config.id) return { error: 'No existe configuración para realizar el abono' };
-  
+
+      // Obtener crédito
       const creditoRes = await client.query(`
-        SELECT id, interes, "usuarioId", "clienteId", monto, monto_interes_generado, saldo_capital, saldo_interes, saldo
+        SELECT id, interes, "usuarioId", "clienteId", monto, monto_interes_generado, saldo
         FROM creditos
         WHERE id = $1
         FOR UPDATE
       `, [creditoId]);
-  
+
       if (creditoRes.rowCount === 0) return { error: 'El crédito no existe' };
-  
+
       const {
         interes,
         usuarioId: creadorCreditoId,
         clienteId,
         monto,
         monto_interes_generado,
-        saldo_capital,
-        saldo_interes,
         saldo
       } = creditoRes.rows[0];
-      
-      //Valor total de la deuda inicial - Capital + Interes
-      const totalDeudaInicial = parseFloat((monto + monto_interes_generado)).toFixed(2);
 
-      //Abono máximo de deuda, para evitar renovaciones altas
+      // Valor deuda total inicio = capital + interés generado
+      const totalDeudaInicial = parseFloat(monto + monto_interes_generado);
+
+      // Abono máximo permitido
       const abonoMaximo = parseFloat((totalDeudaInicial * config.porcentaje_abono_maximo / 100).toFixed(2));
 
-      //Deuda actual del credito
-      const deudaActual = parseFloat((Number(saldo)).toFixed(2));
-
+      // Deuda actual del crédito
+      const deudaActual = parseFloat(saldo);
       const monto_abonado = parseFloat(valor.toFixed(2));
-      
+
       if (monto_abonado > abonoMaximo) {
         return {
           error: `El abono no puede superar el ${config.porcentaje_abono_maximo}% del valor inicial de la deuda`
         };
       }
-  
-      if (monto_abonado > deudaActual.toFixed(2)) {
+
+      if (monto_abonado > deudaActual) {
         return {
           error: `El abono no puede superar el valor adeudado: $ ${deudaActual.toFixed(2)}`
         };
       }
-      
-      //Verifica el estado de la caja
+
+      // Validar caja
       const cajaRes = await client.query(`
         SELECT c.id, c."saldoActual", c.estado
         FROM cajas c
@@ -776,20 +773,17 @@ const Credito = {
         LIMIT 1
         FOR UPDATE
       `, [creadorCreditoId]);
-  
-      if (cajaRes.rowCount === 0) return { error: 'Caja no encontrada' };
-      if (cajaRes.rows[0].estado === 'cerrada') {
-        return { error: 'La caja está cerrada.' };
-      }
 
-      //verifica si tiene un turno activo
+      if (cajaRes.rowCount === 0) return { error: 'Caja no encontrada' };
+      if (cajaRes.rows[0].estado === 'cerrada') return { error: 'La caja está cerrada.' };
+
       const turno = await Caja.getTurnoById(cajaRes.rows[0].id);
       if (!turno.id) return { error: 'No tienes un turno activo' };
-      
-      //establece el tipo de pago
+
+      // Tipo pago
       const tipoPago = monto_abonado <= 0 ? 'visita' : 'abono';
-      
-      //ingresa el pago
+
+      // Registrar pago
       const pagoRes = await client.query(`
         INSERT INTO pagos (
           monto, "user_created_id", "metodoPago", "createdAt", "updatedAt", cordenadas,
@@ -797,11 +791,10 @@ const Credito = {
         ) VALUES ($1, $2, $3, NOW(), NOW(), $4, 'aprobado', $5, $6, $7)
         RETURNING id
       `, [monto_abonado, userId, metodoPago, location, turno.id, clienteId, tipoPago]);
-        
-      //obtiene el id del pago ingresado
+
       const pagoId = pagoRes.rows[0].id;
-      
-      //Obtiene las cuotas del credito
+
+      // Obtener cuotas impagas
       const cuotasRes = await client.query(`
         SELECT id, monto, monto_pagado, estado
         FROM cuotas
@@ -810,37 +803,31 @@ const Credito = {
         FOR UPDATE
       `, [creditoId]);
 
-      const cuotasImpagas = cuotasRes.rows.filter( cuota => cuota.estado === 'impago' )
-        
-      //obtiene el numero de cuotas generadas
+      const cuotasImpagas = cuotasRes.rows.filter(c => c.estado === 'impago');
       const numCuotas = cuotasRes.rows.length;
-  
-      // Cálculo del capital de la cuota
-      const capitalCuota = parseFloat((monto / numCuotas));
-      
-      // Cálculo del interes de la cuota
-      const interesCuota = parseFloat((monto_interes_generado / numCuotas));
-  
+
+      // Calcular capital/interés por cuota
+      const capitalCuota = monto / numCuotas;
+      const interesCuota = monto_interes_generado / numCuotas;
+
       let montoRestante = monto_abonado;
-      let totalCapitalPagado = 0;
-      let totalInteresPagado = 0;
-  
+
       for (const cuota of cuotasImpagas) {
         if (montoRestante <= 0) break;
-  
-        const saldoCuota = parseFloat((cuota.monto - cuota.monto_pagado));
 
-        // es el valor que se aplicara a la cuota que se va a pagar
+        const saldoCuota = cuota.monto - cuota.monto_pagado;
+
         const pagoAplicado = parseFloat(Math.min(saldoCuota, montoRestante).toFixed(2));
-        const porcentajePago = parseFloat((pagoAplicado / cuota.monto).toFixed(2));
+        const porcentajePago = pagoAplicado / cuota.monto;
+
         const capitalPago = parseFloat((capitalCuota * porcentajePago).toFixed(2));
         const interesPago = parseFloat((interesCuota * porcentajePago).toFixed(2));
-  
+
         await client.query(`
           INSERT INTO pagos_cuotas ("pagoId", "cuotaId", monto_abonado, capital_pagado, interes_pagado)
           VALUES ($1, $2, $3, $4, $5)
         `, [pagoId, cuota.id, pagoAplicado, capitalPago, interesPago]);
-  
+
         await client.query(`
           UPDATE cuotas
           SET monto_pagado = monto_pagado + $1,
@@ -848,59 +835,38 @@ const Credito = {
               "updatedAt" = NOW()
           WHERE id = $2
         `, [pagoAplicado, cuota.id]);
-  
-        totalCapitalPagado += capitalPago;
-        totalInteresPagado += interesPago;
+
         montoRestante -= pagoAplicado;
       }
-  
-      const totalCapitalRedondeado = parseFloat(totalCapitalPagado).toFixed(2);
-      const totalInteresRedondeado = parseFloat(totalInteresPagado).toFixed(2);
-  
-      let nuevoSaldoCapital = parseFloat((saldo_capital - totalCapitalPagado).toFixed(2));
-      let nuevoSaldoInteres = parseFloat((saldo_interes - totalInteresPagado).toFixed(2));
-  
-      nuevoSaldoCapital = Math.max(0, nuevoSaldoCapital);
-      nuevoSaldoInteres = Math.max(0, nuevoSaldoInteres);
-  
-      const saldo_nuevo = saldo - monto_abonado;
-      const estadoCredito = saldo_nuevo <= 0 ? 'pagado' : 'impago';
-  
+
+      // Nuevo saldo del crédito
+      const saldoNuevo = saldo - monto_abonado;
+      const estadoCredito = saldoNuevo <= 0 ? 'pagado' : 'impago';
+
+      // Actualizar crédito (solo saldo + estado)
       await client.query(`
         UPDATE creditos
-        SET 
-          capital_pagado = capital_pagado + $1,
-          interes_pagado = interes_pagado + $2,
-          saldo_capital = $3,
-          saldo_interes = $4,
-          saldo = $7,
-          estado = $5,
-          "updatedAt" = NOW()
-        WHERE id = $6
-      `, [
-        totalCapitalRedondeado,
-        totalInteresRedondeado,
-        nuevoSaldoCapital,
-        nuevoSaldoInteres,
-        estadoCredito,
-        creditoId,
-        saldo_nuevo
-      ]);
+        SET saldo = $1,
+            estado = $2,
+            "updatedAt" = NOW()
+        WHERE id = $3
+      `, [saldoNuevo, estadoCredito, creditoId]);
 
+      // Actualizar caja
       const cajaId = cajaRes.rows[0].id;
       const saldoAnterior = parseFloat(cajaRes.rows[0].saldoActual);
-      const nuevoSaldo = parseFloat((saldoAnterior + monto_abonado));
-  
+      const nuevoSaldoCaja = saldoAnterior + monto_abonado;
+
       await client.query(`
         UPDATE cajas
         SET "saldoActual" = $1
         WHERE id = $2
-      `, [nuevoSaldo, cajaId]);
-  
+      `, [nuevoSaldoCaja, cajaId]);
+
       const cliente = await Cliente.getNameById(clienteId);
       const descripcion = monto_abonado <= 0 ? 'Registro de visita' : 'Registro de pago de crédito';
       const tipo = monto_abonado <= 0 ? 'visita' : 'abono';
-  
+
       await client.query(`
         INSERT INTO movimientos_caja (
           "cajaId", descripcion, saldo, saldo_anterior, "createdAt", "updatedAt",
@@ -910,13 +876,13 @@ const Credito = {
           $4, '${tipo}', $5, 'ingreso', $6, $7, $8
         )
       `, [
-        cajaId, nuevoSaldo, saldoAnterior, monto_abonado,
+        cajaId, nuevoSaldoCaja, saldoAnterior, monto_abonado,
         userId, clienteId, creditoId, turno.id
       ]);
-  
+
       await client.query('COMMIT');
       return { success: true, message: "Pago registrado correctamente", pagoId };
-  
+
     } catch (err) {
       await client.query('ROLLBACK');
       console.error(err);
