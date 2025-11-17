@@ -261,10 +261,6 @@ const Credito = {
       frecuencia_pago: row.frecuencia_pago,
       interes: row.interes,
       monto_interes_generado: row.monto_interes_generado,
-      capital_pagado: row.capital_pagado,
-      interes_pagado: row.interes_pagado,
-      saldo_capital: row.saldo_capital,
-      saldo_interes: row.saldo_interes,
       saldo: row.saldo,
       productoId: row.productoId,
       cliente: {
