@@ -277,24 +277,27 @@ const Credito = {
   },
 
   getDataDash: async (rutaId) => {
-    if (rutaId === null) {
-      return [];
-    }
+    if (!rutaId) return [];
+
     try {
       const queryText = `
         WITH config AS (
-          SELECT days_to_yellow, days_to_red FROM config_default LIMIT 1
+          SELECT days_to_yellow, days_to_red 
+          FROM config_default 
+          LIMIT 1
         ),
+
         creditos_filtrados AS (
           SELECT 
             c.id,
             c.saldo,
-            c."fechaVencimiento",
-            cl."rutaId"
+            c."fechaVencimiento"
           FROM creditos c
           INNER JOIN clientes cl ON cl.id = c."clienteId"
-          WHERE c.estado = 'impago' AND cl."rutaId" = $1
+          WHERE c.estado = 'impago' 
+            AND cl."rutaId" = $1
         ),
+
         max_dias_atraso AS (
           SELECT 
             q."creditoId",
@@ -304,25 +307,36 @@ const Credito = {
           WHERE q.estado = 'impago'
           GROUP BY q."creditoId"
         ),
+
         clasificacion_creditos AS (
           SELECT 
             cf.id AS credito_id,
+            cf.saldo,
             CASE
-              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_red OR cf."fechaVencimiento" < CURRENT_DATE THEN 'vencido'
-              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_yellow THEN 'alto_riesgo'
-              WHEN COALESCE(mda.dias_atraso, 0) > 0 THEN 'atrasado'
+              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_red 
+                  OR cf."fechaVencimiento" < CURRENT_DATE 
+              THEN 'vencido'
+
+              WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_yellow 
+              THEN 'alto_riesgo'
+
+              WHEN COALESCE(mda.dias_atraso, 0) > 0 
+              THEN 'atrasado'
+
               ELSE 'al_dia'
             END AS clasificacion
           FROM creditos_filtrados cf
           LEFT JOIN max_dias_atraso mda ON mda."creditoId" = cf.id
           CROSS JOIN config cfg
         ),
+
         caja_actual AS (
           SELECT id, "saldoActual"
           FROM cajas
           WHERE "rutaId" = $1
           LIMIT 1
         ),
+
         turno_activo AS (
           SELECT t.id AS turno_id
           FROM turnos t
@@ -330,18 +344,21 @@ const Credito = {
           WHERE t."fecha_cierre" IS NULL
           LIMIT 1
         ),
+
         pagos_aprobados AS (
           SELECT COALESCE(SUM(p.monto), 0) AS recaudacion
           FROM pagos p
           INNER JOIN turno_activo t ON t.turno_id = p."turno_id"
           WHERE p.estado = 'aprobado'
         ),
+
         egresos_aprobados AS (
           SELECT COALESCE(SUM(e.monto), 0) AS gastos
           FROM egresos e
           INNER JOIN turno_activo t ON t.turno_id = e."turno_id"
           WHERE e.estado = 'aprobado'
         ),
+
         cuotas_a_recaudar AS (
           SELECT 
             COALESCE(SUM(q.monto - q."monto_pagado"), 0) AS monto_a_recaudar_hoy
@@ -349,38 +366,40 @@ const Credito = {
           INNER JOIN creditos_filtrados cf ON cf.id = q."creditoId"
           WHERE 
             q.estado = 'impago'
-            AND (DATE(q."fechaPago") = CURRENT_DATE OR DATE(q."fechaPago") < CURRENT_DATE)
+            AND q."fechaPago"::date <= CURRENT_DATE
         )
-  
+
         SELECT 
           COUNT(*) AS total_impagos,
           COALESCE(SUM(saldo), 0) AS cartera,
-  
+
           COUNT(*) FILTER (WHERE clasificacion = 'alto_riesgo') AS creditos_alto_riesgo,
           COUNT(*) FILTER (WHERE clasificacion = 'vencido') AS creditos_vencidos,
           COUNT(*) FILTER (WHERE clasificacion = 'atrasado') AS creditos_atrasados,
           COUNT(*) FILTER (WHERE clasificacion = 'al_dia') AS creditos_al_dia,
-  
-          SUM(saldo) FILTER (WHERE clasificacion = 'alto_riesgo') AS cartera_alto_riesgo,
-          SUM(saldo) FILTER (WHERE clasificacion = 'vencido') AS cartera_vencidos,
-          SUM(saldo) FILTER (WHERE clasificacion = 'atrasado') AS cartera_atrasados,
-          SUM(saldo) FILTER (WHERE clasificacion = 'al_dia') AS cartera_al_dia,
-  
+
+          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'alto_riesgo'), 0) AS cartera_alto_riesgo,
+          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'vencido'), 0) AS cartera_vencidos,
+          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'atrasado'), 0) AS cartera_atrasados,
+          COALESCE(SUM(saldo) FILTER (WHERE clasificacion = 'al_dia'), 0) AS cartera_al_dia,
+
           (SELECT "saldoActual" FROM caja_actual) AS saldo_caja,
           (SELECT turno_id FROM turno_activo) AS turno_id,
           (SELECT recaudacion FROM pagos_aprobados) AS recaudacion,
           (SELECT gastos FROM egresos_aprobados) AS gastos,
           (SELECT monto_a_recaudar_hoy FROM cuotas_a_recaudar) AS monto_a_recaudar_hoy
+
         FROM clasificacion_creditos;
       `;
-  
-      const data = await db.query(queryText, [rutaId.id]);
-      return data.rows[0];
+
+      const data = await db.query(queryText, [rutaId]);
+      return data.rows[0] ?? {};
+
     } catch (error) {
       console.error("Error al obtener los datos del dashboard:", error);
       throw error;
     }
-  },  
+  },
 
   getDataDashBars: async (frecuencia, rutaId) => {
     if(rutaId === null){
