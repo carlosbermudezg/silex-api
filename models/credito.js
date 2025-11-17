@@ -307,8 +307,6 @@ const Credito = {
         clasificacion_creditos AS (
           SELECT 
             cf.id AS credito_id,
-            cf.saldo_capital,
-            cf.saldo_interes,
             CASE
               WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_red OR cf."fechaVencimiento" < CURRENT_DATE THEN 'vencido'
               WHEN COALESCE(mda.dias_atraso, 0) > cfg.days_to_yellow THEN 'alto_riesgo'
