@@ -167,7 +167,6 @@ const updateCliente = catchError(async (req, res) => {
 module.exports = {
   createCliente,
   getAllClientes,
-  getAllClientesRuta,
   getClienteById,
   archiveCliente,
   getClientesByRuta,
