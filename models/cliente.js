@@ -184,7 +184,7 @@ const Cliente = {
       limit,
       totalPages: Math.ceil(total / limit)
     };
-  },      
+  },
 
   // Obtener un cliente por su ID
   getById: async (id) => {

@@ -1,6 +1,7 @@
 // models/caja.js
 const pool = require('../config/db'); // Importar la conexión a la base de datos
 const Ruta = require('./ruta'); // Importar el modelo de Caja
+const Cliente = require('./cliente');
 
 const Caja = {
 
@@ -1130,6 +1131,7 @@ const Caja = {
       `, [pagoId]);
 
       // 6. Registrar movimiento de anulación
+      const cliente = await Cliente.getNameById(clienteId);
       await client.query(`
         INSERT INTO movimientos_caja (
           "cajaId", descripcion, saldo, saldo_anterior, "createdAt", "updatedAt",
@@ -1140,7 +1142,7 @@ const Caja = {
         )
       `, [
         cajaId,
-        `Anulación de pago ID ${pagoId} - Motivo: ${motivo || 'No especificado'}`,
+        `Anulación de pago ID ${pagoId} (CR${creditoId}: ${cliente.nombres}) - Motivo: ${motivo || 'No especificado'}`,
         nuevoSaldoCaja,
         saldoAnterior,
         montoPago,

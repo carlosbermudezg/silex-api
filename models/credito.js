@@ -277,11 +277,9 @@ const Credito = {
   },
 
   getDataDash: async (rutaId) => {
-    // Si no se envía rutaId, devolvemos un arreglo vacío.
     if (!rutaId) return [];
 
     try {
-
       const query = `
         WITH 
         ---------------------------------------------------------
@@ -301,7 +299,7 @@ const Credito = {
           FROM creditos c
           INNER JOIN clientes cl ON cl.id = c."clienteId"
           WHERE c.estado = 'impago'
-          AND cl."rutaId" = $1
+            AND cl."rutaId" = $1
         ),
 
         ---------------------------------------------------------
@@ -318,7 +316,7 @@ const Credito = {
         ),
 
         ---------------------------------------------------------
-        -- 4) CLASIFICACIÓN DEL CRÉDITO SEGÚN ATRASO
+        -- 4) CLASIFICACIÓN DEL CRÉDITO
         ---------------------------------------------------------
         clasificacion AS (
           SELECT
@@ -340,84 +338,88 @@ const Credito = {
         -- 5) CAJA DE LA RUTA
         ---------------------------------------------------------
         caja AS (
-          SELECT "saldoActual", estado
+          SELECT id, "saldoActual", estado
           FROM cajas
           WHERE "rutaId" = $1
           LIMIT 1
         ),
 
         ---------------------------------------------------------
-        -- 6) RECAUDACIÓN DIARIA
+        -- 6) TURNO ACTIVO DE LA CAJA (fecha_cierre IS NULL)
+        ---------------------------------------------------------
+        turno_activo AS (
+          SELECT *
+          FROM turnos
+          WHERE caja_id = (SELECT id FROM caja)
+            AND fecha_cierre IS NULL
+          LIMIT 1
+        ),
+
+        ---------------------------------------------------------
+        -- 7) RECAUDACIÓN DIARIA
         ---------------------------------------------------------
         recaudacion_diaria AS (
           SELECT COALESCE(SUM(monto), 0) AS total
           FROM pagos
           WHERE estado = 'aprobado'
-          AND DATE("createdAt") = CURRENT_DATE
+            AND DATE("createdAt") = CURRENT_DATE
         ),
 
         ---------------------------------------------------------
-        -- 7) GASTOS DIARIOS
+        -- 8) GASTOS DIARIOS
         ---------------------------------------------------------
         gastos_diarios AS (
           SELECT COALESCE(SUM(monto), 0) AS total
           FROM egresos
           WHERE estado = 'aprobado'
-          AND DATE("createdAt") = CURRENT_DATE
+            AND DATE("createdAt") = CURRENT_DATE
         ),
 
         ---------------------------------------------------------
-        -- 8) COBROS PENDIENTES (cuotas impagas hasta hoy)
+        -- 9) COBROS PENDIENTES
         ---------------------------------------------------------
         cobros_pendientes AS (
-          SELECT 
-            COALESCE(SUM(q.monto - q."monto_pagado"), 0) AS total
+          SELECT COALESCE(SUM(q.monto - q."monto_pagado"), 0) AS total
           FROM cuotas q
           INNER JOIN creditos_activos c ON c.id = q."creditoId"
           WHERE q.estado = 'impago'
-          AND DATE(q."fechaPago") <= CURRENT_DATE
+            AND DATE(q."fechaPago") <= CURRENT_DATE
         )
 
         ---------------------------------------------------------
-        -- 9) RESULTADOS FINALES DEL DASHBOARD
+        -- 10) RESULTADO FINAL
         ---------------------------------------------------------
         SELECT
           (SELECT COUNT(*) FROM creditos_activos) AS creditos_activos,
 
-          -- Clasificación
           COUNT(*) FILTER (WHERE estado_credito = 'al_dia') AS creditos_al_dia,
           COUNT(*) FILTER (WHERE estado_credito = 'atrasado') AS creditos_atrasados,
           COUNT(*) FILTER (WHERE estado_credito = 'alto_riesgo') AS creditos_alto_riesgo,
           COUNT(*) FILTER (WHERE estado_credito = 'vencido') AS creditos_vencidos,
 
-          -- Saldos
           SUM(saldo) AS cartera_total,
 
-          -- Caja
           (SELECT "saldoActual" FROM caja) AS saldo_caja,
           (SELECT estado FROM caja) AS estado_caja,
 
-          -- Totales del día
+          -- TURNO ACTIVO COMO OBJETO JSON
+          (SELECT row_to_json(t) FROM turno_activo t) AS turno,
+
           (SELECT total FROM recaudacion_diaria) AS recaudacion_hoy,
           (SELECT total FROM gastos_diarios) AS gastos_hoy,
-
-          -- Pendientes
           (SELECT total FROM cobros_pendientes) AS cobros_pendientes
 
         FROM clasificacion;
       `;
 
-      // Ejecutar la consulta con rutaId como parámetro
       const result = await db.query(query, [rutaId.id]);
-
-      // Devolver la primera fila que contiene todas las métricas
       return result.rows[0];
 
     } catch (error) {
       console.error("Error en getDataDash:", error);
       throw error;
     }
-  }, 
+  },
 
   getDataDashBars: async (frecuencia, rutaId) => {
     if(rutaId === null){
@@ -820,15 +822,16 @@ const Credito = {
 
       // Tipo pago
       const tipoPago = monto_abonado <= 0 ? 'visita' : 'abono';
+      const saldoPagos = saldo - monto_abonado
 
       // Registrar pago
       const pagoRes = await client.query(`
         INSERT INTO pagos (
           monto, "user_created_id", "metodoPago", "createdAt", "updatedAt", cordenadas,
-          estado, turno_id, cliente_id, tipo
-        ) VALUES ($1, $2, $3, NOW(), NOW(), $4, 'aprobado', $5, $6, $7)
+          estado, turno_id, cliente_id, tipo, saldo
+        ) VALUES ($1, $2, $3, NOW(), NOW(), $4, 'aprobado', $5, $6, $7, $8)
         RETURNING id
-      `, [monto_abonado, userId, metodoPago, location, turno.id, clienteId, tipoPago]);
+      `, [monto_abonado, userId, metodoPago, location, turno.id, clienteId, tipoPago, saldoPagos]);
 
       const pagoId = pagoRes.rows[0].id;
 

@@ -403,7 +403,7 @@ const getValidAbonosByTurno = catchError(async (req, res) => {
   });
 });
 
-// Función para obtener comprobante por id
+// Función para obtener comprobante por id pdf
 const getComprobanteById = catchError(async (req, res) => {
   const { id } = req.params;
   const pago = await Caja.getComprobanteById(id);
@@ -413,7 +413,7 @@ const getComprobanteById = catchError(async (req, res) => {
   }
 
   // 1. Contenido para el QR
-  const qrData = `Comprobante #${pago.id}\nCliente: ${pago.nombre}\nMonto: $${pago.monto}\nMétodo: ${pago.metodoPago}\nFecha: ${new Date(pago.createdAt).toLocaleString()}`;
+  const qrData = `Comprobante #${pago.id}\nCliente: ${pago.nombre}\nMonto: $${pago.monto}\nSaldo: $${pago.saldo}\nMétodo: ${pago.metodoPago}\nFecha: ${new Date(pago.createdAt).toLocaleString()}`;
 
   // 2. Generar código QR en base64
   const qrImageDataUrl = await QRCode.toDataURL(qrData);
@@ -460,6 +460,9 @@ const getComprobanteById = catchError(async (req, res) => {
   doc.font('Helvetica-Bold').text('Monto:', { continued: true });
   doc.font('Helvetica').text(` $${pago.monto}`);
 
+  doc.font('Helvetica-Bold').text('Saldo:', { continued: true });
+  doc.font('Helvetica').text(` $${pago.saldo}`);
+
   doc.font('Helvetica-Bold').text('Método de pago:', { continued: true });
   doc.font('Helvetica').text(` ${pago.metodoPago}`);
   doc.moveDown();
@@ -483,7 +486,7 @@ const getComprobanteById = catchError(async (req, res) => {
     .text('Gracias por su pago', 20, doc.page.height - 50, {
       align: 'center'
     })
-    .text('Autentic', 20, doc.page.height - 35, {
+    .text('Dracarys', 20, doc.page.height - 35, {
       align: 'center'
     });
 
