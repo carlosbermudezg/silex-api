@@ -1,6 +1,6 @@
 const db = require('../config/db');
 
-const Vehiculo = {
+module.exports = (db) => ({
   // Crear un nuevo vehículo
   create: async ({ placa, userId, chasis, fotos = [] }) => {
     const queryVehiculo = `
@@ -24,23 +24,23 @@ const Vehiculo = {
   },
 
   // Obtener todos los vehículos paginados
-    getAll: async (limit, offset, searchTerm) => {
-        const whereConditions = [];
-        const params = [];
-        let paramIndex = 1;
-    
-        if (searchTerm) {
-        whereConditions.push(`(
+  getAll: async (limit, offset, searchTerm) => {
+    const whereConditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (searchTerm) {
+      whereConditions.push(`(
             LOWER(v.placa) LIKE LOWER($${paramIndex}) 
             OR LOWER(v.chasis) LIKE LOWER($${paramIndex})
         )`);
-        params.push(`%${searchTerm}%`);
-        paramIndex++;
-        }
-    
-        const whereClause = whereConditions.length ? `WHERE ${whereConditions.join(' AND ')}` : '';
-    
-        const dataQuery = `
+      params.push(`%${searchTerm}%`);
+      paramIndex++;
+    }
+
+    const whereClause = whereConditions.length ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const dataQuery = `
         SELECT 
             v.*, 
             u.nombre AS "responsableNombre",
@@ -56,25 +56,25 @@ const Vehiculo = {
         ORDER BY v.id DESC
         LIMIT $${paramIndex++} OFFSET $${paramIndex};
         `;
-    
-        params.push(limit, offset);
-    
-        const { rows } = await db.query(dataQuery, params);
-    
-        // Total count
-        const countQuery = `SELECT COUNT(*) FROM vehiculos v ${whereClause};`;
-        const countParams = params.slice(0, paramIndex - 2); // sin limit y offset
-        const countResult = await db.query(countQuery, countParams);
-        const total = parseInt(countResult.rows[0].count);
-    
-        return {
-        data: rows,
-        total,
-        page: Math.floor(offset / limit) + 1,
-        limit,
-        totalPages: Math.ceil(total / limit),
-        };
-    },  
+
+    params.push(limit, offset);
+
+    const { rows } = await db.query(dataQuery, params);
+
+    // Total count
+    const countQuery = `SELECT COUNT(*) FROM vehiculos v ${whereClause};`;
+    const countParams = params.slice(0, paramIndex - 2); // sin limit y offset
+    const countResult = await db.query(countQuery, countParams);
+    const total = parseInt(countResult.rows[0].count);
+
+    return {
+      data: rows,
+      total,
+      page: Math.floor(offset / limit) + 1,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  },
 
   // Obtener un vehículo por ID
   getById: async (id) => {
@@ -94,29 +94,29 @@ const Vehiculo = {
   },
 
   // Actualizar un vehículo
-    update: async (id, { placa, userId, chasis, fotosExistentes = [], nuevasFotos = [] }) => {
-        const queryUpdate = `
+  update: async (id, { placa, userId, chasis, fotosExistentes = [], nuevasFotos = [] }) => {
+    const queryUpdate = `
         UPDATE vehiculos 
         SET placa = $1, "userId" = $2, chasis = $3
         WHERE id = $4 RETURNING *;
         `;
-        const { rows } = await db.query(queryUpdate, [placa, userId, chasis, id]);
-        const vehiculo = rows[0];
+    const { rows } = await db.query(queryUpdate, [placa, userId, chasis, id]);
+    const vehiculo = rows[0];
 
-        // Borrar todas las fotos del vehículo
-        await db.query(`DELETE FROM vehiculos_fotos WHERE "vehiculoId" = $1`, [id]);
+    // Borrar todas las fotos del vehículo
+    await db.query(`DELETE FROM vehiculos_fotos WHERE "vehiculoId" = $1`, [id]);
 
-        // Insertar las fotos que vienen desde el front (existentes + nuevas)
-        const todasLasFotos = [...fotosExistentes, ...nuevasFotos];
-        if (todasLasFotos.length > 0) {
-        const values = todasLasFotos.map((_, i) => `($1, $${i + 2})`).join(', ');
-        await db.query(
-            `INSERT INTO vehiculos_fotos ("vehiculoId", foto) VALUES ${values}`,
-            [id, ...todasLasFotos]
-        );
-        }
-        return vehiculo;
-    },  
+    // Insertar las fotos que vienen desde el front (existentes + nuevas)
+    const todasLasFotos = [...fotosExistentes, ...nuevasFotos];
+    if (todasLasFotos.length > 0) {
+      const values = todasLasFotos.map((_, i) => `($1, $${i + 2})`).join(', ');
+      await db.query(
+        `INSERT INTO vehiculos_fotos ("vehiculoId", foto) VALUES ${values}`,
+        [id, ...todasLasFotos]
+      );
+    }
+    return vehiculo;
+  },
 
   // Eliminar un vehículo
   delete: async (id) => {
@@ -124,6 +124,4 @@ const Vehiculo = {
     await db.query(`DELETE FROM vehiculos WHERE id = $1;`, [id]);
     return { message: 'Vehículo eliminado correctamente.' };
   },
-};
-
-module.exports = Vehiculo;
+});

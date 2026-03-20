@@ -1,28 +1,27 @@
 // models/config.js
 const pool = require('../config/db'); // Importar la conexión a la base de datos
-const Ruta = require('./ruta')
 
-const Config = {
+module.exports = (db) => ({
   // Obtener todas las categorías de egresos
   getAllCategories: async (offset, limit, searchTerm) => {
     try {
       let query = `SELECT * FROM config_egresos_category`;
       let countQuery = `SELECT COUNT(*) FROM config_egresos_category`;
       const params = [];
-  
+
       if (searchTerm) {
         query += ` WHERE nombre ILIKE $1`;
         countQuery += ` WHERE nombre ILIKE $1`;
         params.push(`%${searchTerm}%`);
       }
-  
+
       // Agrega paginación
       query += ` ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       params.push(limit, offset);
-  
+
       const data = await pool.query(query, params);
       const total = await pool.query(countQuery, searchTerm ? [params[0]] : []);
-  
+
       return {
         data: data.rows,
         total: parseInt(total.rows[0].count, 10),
@@ -38,20 +37,20 @@ const Config = {
       let query = `SELECT * FROM config_ingresos_category`;
       let countQuery = `SELECT COUNT(*) FROM config_ingresos_category`;
       const params = [];
-  
+
       if (searchTerm) {
         query += ` WHERE nombre ILIKE $1`;
         countQuery += ` WHERE nombre ILIKE $1`;
         params.push(`%${searchTerm}%`);
       }
-  
+
       // Agrega paginación
       query += ` ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       params.push(limit, offset);
-  
+
       const data = await pool.query(query, params);
       const total = await pool.query(countQuery, searchTerm ? [params[0]] : []);
-  
+
       return {
         data: data.rows,
         total: parseInt(total.rows[0].count, 10),
@@ -95,7 +94,7 @@ const Config = {
 
   // Crear una nueva categoría de egreso
   createCategory: async (nombre) => {
-    try { 
+    try {
       const query = 'INSERT INTO config_egresos_category (nombre, "createdAt", "updatedAt", archivada) VALUES ($1, NOW(), NOW(), FALSE) RETURNING *';
       const values = [nombre];
       const res = await pool.query(query, values);
@@ -107,7 +106,7 @@ const Config = {
 
   // Crear una nueva categoría de ingreso
   createCategoryIn: async (nombre) => {
-    try { 
+    try {
       const query = 'INSERT INTO config_ingresos_category (nombre, "createdAt", "updatedAt", archivada) VALUES ($1, NOW(), NOW(), FALSE) RETURNING *';
       const values = [nombre];
       const res = await pool.query(query, values);
@@ -208,7 +207,7 @@ const Config = {
   // Obtener todas las rutas con su configuración de crédito
   getRutasConfig: async (page, limit, search) => {
     const offset = (page - 1) * limit;
-  
+
     // Contar total con o sin filtro
     let countQuery = 'SELECT COUNT(*) FROM ruta';
     let countParams = [];
@@ -219,7 +218,7 @@ const Config = {
     const countResult = await pool.query(countQuery, countParams);
     const totalItems = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(totalItems / limit);
-  
+
     // Construir la consulta principal
     let queryText = `
       SELECT 
@@ -240,14 +239,14 @@ const Config = {
       queryText += ` WHERE r.nombre ILIKE $3`;
       queryParams.push(`%${search}%`);
     }
-  
+
     queryText += `
       ORDER BY r.nombre ASC
       LIMIT $1 OFFSET $2
     `;
-  
+
     const result = await pool.query(queryText, queryParams);
-  
+
     return {
       data: result.rows,
       totalItems,
@@ -353,21 +352,21 @@ const Config = {
       LIMIT $1 OFFSET $2;
     `;
     const countQuery = `SELECT COUNT(*) FROM dias_no_laborables;`;
-  
+
     const [result, countResult] = await Promise.all([
       pool.query(query, [limit, offset]),
       pool.query(countQuery),
     ]);
-  
+
     const total = parseInt(countResult.rows[0].count, 10);
     const totalPages = Math.ceil(total / limit);
-  
+
     return {
       data: result.rows,
       total,
       totalPages,
     };
-  },  
+  },
 
   // Eliminar un día no laborable por ID
   deleteNoLaborable: async (id) => {
@@ -380,28 +379,26 @@ const Config = {
     const result = await pool.query(`SELECT * FROM config_dias_no_laborables LIMIT 1`);
     return result.rows[0];
   },
-  
+
   updateConfigDiasNoLaborables: async (updates) => {
     const fields = [];
     const values = [];
     let index = 1;
-  
+
     for (const key in updates) {
       fields.push(`${key} = $${index}`);
       values.push(updates[key]);
       index++;
     }
-  
+
     const query = `
       UPDATE config_dias_no_laborables
       SET ${fields.join(', ')}, updated_at = NOW()
       WHERE id = 1
       RETURNING *;
     `;
-  
+
     const result = await pool.query(query, values);
     return result.rows[0];
   },
-};
-
-module.exports = Config;
+});

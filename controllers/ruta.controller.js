@@ -1,17 +1,27 @@
-const Ruta = require('../models/ruta');
-const Caja = require('../models/caja');
+const RutaModel = require('../models/ruta');
+const CajaModel = require('../models/caja');
 const catchError = require('../utils/catchError');
 
 // Crear una nueva ruta
 const createRuta = catchError(async (req, res) => {
-  const ruta = await Ruta.create(req.body);
-  const caja = await Caja.create(0, ruta.id)
-  ruta.caja = caja
-  return res.status(201).json({ message: 'Ruta creada', data: ruta });
+  try {
+    const Ruta = RutaModel(req.db);
+    const Caja = CajaModel(req.db);
+    const ruta = await Ruta.create(req.body);
+    const caja = await Caja.create(0, ruta.id)
+    ruta.caja = caja
+    return res.status(201).json({ message: 'Ruta creada', data: ruta });
+  } catch (error) {
+    if (error.message.includes('Límite de rutas alcanzado')) {
+      return res.status(403).json({ message: error.message });
+    }
+    throw error;
+  }
 });
 
 // Obtener todas las rutas con paginación
 const getAllRutas = catchError(async (req, res) => {
+  const Ruta = RutaModel(req.db);
   const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * parseInt(limit);
   const rutas = await Ruta.getAll(page, limit, offset);
@@ -20,6 +30,7 @@ const getAllRutas = catchError(async (req, res) => {
 
 // Obtener una ruta por ID
 const getRutaById = catchError(async (req, res) => {
+  const Ruta = RutaModel(req.db);
   const { id } = req.params;
   const ruta = await Ruta.getById(id);
   if (!ruta) return res.status(404).json({ message: 'Ruta no encontrada' });
@@ -28,6 +39,7 @@ const getRutaById = catchError(async (req, res) => {
 
 // Editar una ruta
 const updateRuta = catchError(async (req, res) => {
+  const Ruta = RutaModel(req.db);
   const { id } = req.params;
   const updatedRuta = await Ruta.update(id, req.body);
 
@@ -61,6 +73,7 @@ const updateRuta = catchError(async (req, res) => {
 
 // Eliminar una ruta
 const deleteRuta = catchError(async (req, res) => {
+  const Ruta = RutaModel(req.db);
   const { id } = req.params;
 
   try {
@@ -73,51 +86,55 @@ const deleteRuta = catchError(async (req, res) => {
 
 const getRutasByOficina = async (req, res) => {
   try {
-      const { oficinaId } = req.params;
-      const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * parseInt(limit);
+    const Ruta = RutaModel(req.db);
+    const { oficinaId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * parseInt(limit);
 
-      const rutas = await Ruta.getByOficina(oficinaId, parseInt(page), parseInt(limit), offset);
-      return res.status(200).json(rutas);
+    const rutas = await Ruta.getByOficina(oficinaId, parseInt(page), parseInt(limit), offset);
+    return res.status(200).json(rutas);
 
   } catch (error) {
-      return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
 
 const searchRutasByName = async (req, res) => {
   try {
-      const { searchTerm } = req.query;
-      const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * parseInt(limit);
+    const Ruta = RutaModel(req.db);
+    const { searchTerm } = req.query;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * parseInt(limit);
 
-      const rutas = await Ruta.searchByName(searchTerm, parseInt(page), parseInt(limit), offset);
-      return res.status(200).json(rutas);
+    const rutas = await Ruta.searchByName(searchTerm, parseInt(page), parseInt(limit), offset);
+    return res.status(200).json(rutas);
 
   } catch (error) {
-      return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
 
 const getRutasByUsuario = async (req, res) => {
   try {
-      const { usuarioId } = req.params;
-      const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * parseInt(limit);
+    const Ruta = RutaModel(req.db);
+    const { usuarioId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * parseInt(limit);
 
-      if (!usuarioId) {
-          return res.status(400).json({ error: "Debe proporcionar un ID de usuario." });
-      }
+    if (!usuarioId) {
+      return res.status(400).json({ error: "Debe proporcionar un ID de usuario." });
+    }
 
-      const rutas = await Ruta.getByUsuario(usuarioId, parseInt(page), parseInt(limit), offset);
-      return res.status(200).json(rutas);
+    const rutas = await Ruta.getByUsuario(usuarioId, parseInt(page), parseInt(limit), offset);
+    return res.status(200).json(rutas);
 
   } catch (error) {
-      return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
 
 const getRutaDelCobrador = catchError(async (req, res) => {
+  const Ruta = RutaModel(req.db);
   const { id } = req.params;
   const resultado = await Ruta.getRutaPorUsuarioId(id);
   res.status(200).json(resultado);

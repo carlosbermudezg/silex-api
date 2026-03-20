@@ -1,103 +1,29 @@
-const Usuario = require('../models/usuario');
-const Permiso = require('../models/permiso');
+const UsuarioModel = require('../models/usuario');
+const PermisoModel = require('../models/permiso');
 const jwt = require('jsonwebtoken');
 
 const login = async (req, res) => {
+  const Usuario = UsuarioModel(req.db);
+  const Permiso = PermisoModel(req.db);
   const { email, password } = req.body;
   const secretKey = process.env.TOKEN;
 
   try {
-    const usuario = await Usuario.getByEmailUser(email);
 
-    if (!usuario) {
-      return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
-    }
-
-    if (!['cobrador'].includes(usuario.user.tipo)) {
-      return res.status(403).json({ success: false, message: 'Usuario no autorizado' });
-    }
-
-    // Validar contra contraseña
-    const isPasswordValid = await Usuario.validatePassword(password, usuario.user.contrasena);
-
-    // Validar contra código de seguridad
-    const isSecurityCodeValid = usuario.user.securityCode
-      ? await Usuario.validatePassword(password, usuario.user.securityCode)
-      : false;
-
-    let autenticadoCon = null;
-
-    if (isPasswordValid) {
-      autenticadoCon = 'password';
-    } else if (isSecurityCodeValid) {
-      autenticadoCon = 'codigo_seguridad';
-    } else {
-      return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
-    }
-
-    // Obtener permisos
-    let permisos = [];
-    if (usuario.user.permisoId) {
-      const permisosDescripcion = await Permiso.getById(usuario.user.permisoId);
-      if (typeof permisosDescripcion.descripcion[0] === 'string') {
-        permisos = JSON.parse(permisosDescripcion.descripcion[0]);
-      } else if (Array.isArray(permisosDescripcion.descripcion[0])) {
-        permisos = permisosDescripcion.descripcion[0];
-      }
-    }
-
-    const token = jwt.sign(
-      {
-        userId: usuario.user.id,
-        name: usuario.user.nombre,
-        email: usuario.user.correo,
-        role: usuario.user.tipo,
-        status: usuario.user.estado,
-        permisos,
-        metodo: autenticadoCon,
-        ruta: usuario.ruta
-      },
-      secretKey,
-      { expiresIn: '1h' }
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: autenticadoCon === 'password'
-        ? 'Login exitoso'
-        : 'Login con código de seguridad',
-      token,
-      loginCon: autenticadoCon,
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Error en el servidor',
-      error: error.message,
-    });
-  }
-};
-
-const loginAdm = async (req, res) => {
-  const { email, password } = req.body;
-  const secretKey = process.env.TOKEN;
-
-  try {
     const usuario = await Usuario.getByEmail(email);
 
     if (!usuario) {
-      return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+      return res.status(404).json({ success: false, message: 'Credenciales inválidas. (1)' });
     }
 
     if (!['administrador', 'administrador_oficina'].includes(usuario.tipo)) {
-      return res.status(404).json({ success: false, message: 'Usuario no autorizado' });
+      return res.status(404).json({ success: false, message: 'Credenciales inválidas. (2)' });
     }
 
     const isPasswordValid = await Usuario.validatePassword(password, usuario.contrasena);
 
     if (!isPasswordValid) {
-      return res.status(401).json({ success: false, message: 'Contraseña incorrecta' });
+      return res.status(401).json({ success: false, message: 'Credenciales inválidas. (3)' });
     }
 
     // ✅ Obtener permisos desde la tabla permisos
@@ -119,7 +45,7 @@ const loginAdm = async (req, res) => {
         email: usuario.correo,
         role: usuario.tipo,
         status: usuario.estado,
-        permisos: permisos, // <- acá agregamos los permisos al payload
+        permisos: permisos,
       },
       secretKey,
       { expiresIn: '1h' }
@@ -141,4 +67,4 @@ const loginAdm = async (req, res) => {
   }
 };
 
-module.exports = { login, loginAdm };
+module.exports = { login };

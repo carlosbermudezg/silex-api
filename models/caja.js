@@ -3,7 +3,7 @@ const pool = require('../config/db'); // Importar la conexión a la base de dato
 const Ruta = require('./ruta'); // Importar el modelo de Caja
 const Cliente = require('./cliente');
 
-const Caja = {
+module.exports = (db) => ({
 
   // Obtener todas las cajas
   getAll: async () => {
@@ -39,7 +39,7 @@ const Caja = {
   getOpenTurnos: async (limit, offset, search) => {
     try {
       const searchFilter = `%${search || ''}%`;
-  
+
       const queryTurnos = `
         SELECT 
           turnos.*,
@@ -61,7 +61,7 @@ const Caja = {
         ORDER BY turnos.id DESC
         LIMIT $1 OFFSET $2
       `;
-  
+
       const queryTotal = `
         SELECT COUNT(*) FROM turnos
         JOIN cajas ON turnos.caja_id = cajas.id
@@ -69,34 +69,34 @@ const Caja = {
         WHERE turnos.fecha_cierre IS NULL
           AND ruta.nombre ILIKE $1
       `;
-  
+
       const [turnosRes, totalRes] = await Promise.all([
         pool.query(queryTurnos, [limit, offset, searchFilter]),
         pool.query(queryTotal, [searchFilter])
       ]);
-  
+
       const totalItems = parseInt(totalRes.rows[0].count, 10);
       const totalPages = Math.ceil(totalItems / limit);
       const currentPage = Math.floor(offset / limit) + 1;
-  
+
       return {
         turnos: turnosRes.rows,
         totalPages,
         page: currentPage,
         total: totalItems
       };
-  
+
     } catch (error) {
       console.error("Error al obtener turnos abiertos:", error);
       throw error;
     }
-  },   
+  },
 
   // Obtener una caja por su ID de usuario
   getByUserId: async (id) => {
     try {
       const ruta = await Ruta.getByUserId(id);
-      if(!ruta){
+      if (!ruta) {
         throw new Error('No tienes una ruta asignada');
       }
       const res = await pool.query('SELECT * FROM cajas WHERE "rutaId" = $1', [ruta[0].id]);
@@ -105,7 +105,7 @@ const Caja = {
       throw error;
     }
   },
-  
+
   // Obtener una caja por su ID de ruta
   getByRutaId: async (id) => {
     try {
@@ -117,7 +117,7 @@ const Caja = {
         JOIN ruta ON cajas."rutaId" = ruta.id
         WHERE cajas."rutaId" = $1
       `, [id]);
-  
+
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -159,7 +159,7 @@ const Caja = {
       throw error;
     }
   },
- 
+
   // Agregar saldo a la caja de un usuario, verificando el permiso del administrador
   agregarSaldo: async (adminId, rutaId, monto) => {
     const client = await pool.connect();
@@ -176,7 +176,7 @@ const Caja = {
       const permisoAdminResult = await client.query(permisoAdminQuery, [adminId]);
 
       if (permisoAdminResult.rows.length === 0) {
-      throw new Error('El usuario no tiene permiso para asignar saldo.');
+        throw new Error('El usuario no tiene permiso para asignar saldo.');
       }
 
       // 2️⃣ Verificar que la caja de la ruta existe
@@ -292,14 +292,14 @@ const Caja = {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-  
+
       // Validar que NO haya un turno abierto
       const turnoAbierto = await client.query(`
         SELECT id FROM turnos
         WHERE "caja_id" = $1 AND fecha_cierre IS NULL
         LIMIT 1
       `, [cajaId]);
-  
+
       if (turnoAbierto.rowCount > 0) {
         await client.query('ROLLBACK');
         return {
@@ -307,7 +307,7 @@ const Caja = {
           message: 'La caja ya tiene un turno abierto.'
         };
       }
-  
+
       // Obtener último turno cerrado (si existe)
       const ultimoTurno = await client.query(`
         SELECT monto_final FROM turnos
@@ -315,15 +315,15 @@ const Caja = {
         ORDER BY fecha_cierre DESC
         LIMIT 1
       `, [cajaId]);
-  
+
       const montoInicial = ultimoTurno.rows[0]?.monto_final || 0;
-  
+
       // Cambiar estado de la caja a 'abierta'
       await client.query(`
         UPDATE cajas SET estado = 'abierta', "updatedAt" = NOW()
         WHERE id = $1
       `, [cajaId]);
-  
+
       // Insertar nuevo turno
       await client.query(`
         INSERT INTO turnos (
@@ -337,13 +337,13 @@ const Caja = {
         sistema ? 'Apertura automática por el sistema' : 'Apertura manual',
         sistema
       ]);
-  
+
       await client.query('COMMIT');
       return {
         success: true,
         message: 'Caja abierta correctamente'
       };
-  
+
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -377,7 +377,7 @@ const Caja = {
       totalPages
     };
   },
- 
+
   createEgreso: async ({ monto, descripcion, userId, gastoCategoryId, userRole, foto }) => {
 
     const estado = (userRole === 'administrador' || userRole === 'administrador_oficina') ? 'aprobado' : 'pendiente';
@@ -389,20 +389,20 @@ const Caja = {
 
       const ruta = await Ruta.getByUserId(userId);
 
-      if(!ruta){
+      if (!ruta) {
         throw new Error('No tienes una ruta asignada');
       }
-  
+
       // 🔍 Validar hora máxima si es cobrador
       if (userRole === 'cobrador') {
         const configResult = await client.query(
           'SELECT hora_gastos FROM config_caja WHERE id=1 LIMIT 1'
         );
-  
+
         if (configResult.rowCount === 0) {
           throw new Error('No se encontró la configuración de gastos');
         }
-  
+
         const horaMaxima = configResult.rows[0].hora_gastos;
         const horaActual = new Intl.DateTimeFormat('es-EC', {
           timeZone: 'America/Guayaquil',
@@ -411,22 +411,22 @@ const Caja = {
           second: '2-digit',
           hour12: false
         }).format(new Date());
-  
+
         if (horaActual > horaMaxima) {
           throw new Error(`No se pueden registrar gastos después de las ${horaMaxima}`);
         }
       }
-  
+
       // 🟡 Obtener la caja del usuario
       const cajaResult = await client.query(
         'SELECT id, "saldoActual", estado FROM cajas WHERE "rutaId"=$1 LIMIT 1',
         [ruta[0].id]
       );
-  
+
       if (cajaResult.rowCount === 0) {
         throw new Error('No se encontró una caja asociada');
       }
-  
+
       if (cajaResult.rows[0].estado === 'cerrada') {
         throw new Error('La caja está cerrada.');
       }
@@ -436,15 +436,15 @@ const Caja = {
       if (turno.rowCount === 0) {
         throw new Error('No no tienes un turno activo');
       }
-  
+
       const cajaId = cajaResult.rows[0].id;
       const saldoActual = parseFloat(cajaResult.rows[0].saldoActual);
-  
+
       // 🧮 Verificar saldo si es aprobado
       if (estado === 'aprobado' && monto > saldoActual) {
         throw new Error('Saldo insuficiente en caja para realizar el egreso');
       }
-  
+
       // 🟢 Insertar egreso
       const insertEgresoQuery = `
         INSERT INTO egresos (
@@ -457,12 +457,12 @@ const Caja = {
       const egresoValues = [monto, descripcion, estado, cajaId, gastoCategoryId, userId, aprovedId, foto, turno.id];
       const egresoResult = await client.query(insertEgresoQuery, egresoValues);
       const egreso = egresoResult.rows[0];
-  
+
       // ✅ Registrar movimiento si aprobado
       if (estado === 'aprobado') {
         const saldoAnterior = saldoActual;
         const nuevoSaldo = saldoAnterior - monto;
-  
+
         const insertMovimientoCajaQuery = `
           INSERT INTO movimientos_caja (
             "cajaId", descripcion, saldo, saldo_anterior, "createdAt", "updatedAt",
@@ -470,7 +470,7 @@ const Caja = {
           )
           VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, $6, $7, $8, $9);
         `;
-  
+
         const movimientoValues = [
           cajaId,
           descripcion,
@@ -482,9 +482,9 @@ const Caja = {
           'egreso',
           turno.id
         ];
-  
+
         await client.query(insertMovimientoCajaQuery, movimientoValues);
-  
+
         // 📉 Actualizar saldo
         const updateSaldoQuery = `
           UPDATE cajas
@@ -494,10 +494,10 @@ const Caja = {
         `;
         await client.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
       }
-  
+
       await client.query('COMMIT');
       return egreso;
-  
+
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -506,33 +506,33 @@ const Caja = {
     }
   },
 
-  createEgresoAdm: async ({ monto, descripcion, cajaId, aprovedId, gastoCategoryId, turnoId}) => {
+  createEgresoAdm: async ({ monto, descripcion, cajaId, aprovedId, gastoCategoryId, turnoId }) => {
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-  
+
       // 🟡 Obtener la caja
       const cajaResult = await client.query(
         'SELECT id, "saldoActual", estado FROM cajas WHERE id = $1 LIMIT 1',
         [cajaId]
       );
-  
+
       if (cajaResult.rowCount === 0) {
         throw new Error('La caja no existe');
       }
-  
+
       if (cajaResult.rows[0].estado === 'cerrada') {
         throw new Error('La caja está cerrada.');
       }
 
       const saldoActual = parseFloat(cajaResult.rows[0].saldoActual);
-  
+
       // 🧮 Verificar saldo si es aprobado
       if (monto > saldoActual) {
         throw new Error('Saldo insuficiente en caja para realizar el egreso');
       }
-  
+
       // 🟢 Insertar egreso
       const insertEgresoQuery = `
         INSERT INTO egresos (
@@ -545,7 +545,7 @@ const Caja = {
       const egresoValues = [monto, descripcion, 'aprobado', cajaId, gastoCategoryId, aprovedId, aprovedId, turnoId];
       const egresoResult = await client.query(insertEgresoQuery, egresoValues);
       const egreso = egresoResult.rows[0];
-  
+
       // ✅ Registrar movimiento
       const saldoAnterior = saldoActual;
       const nuevoSaldo = saldoAnterior - monto;
@@ -581,10 +581,10 @@ const Caja = {
         WHERE id = $2;
       `;
       await client.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
-  
+
       await client.query('COMMIT');
       return egreso;
-  
+
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -593,28 +593,28 @@ const Caja = {
     }
   },
 
-  createIngresoAdm: async ({ monto, descripcion, cajaId, aprovedId, ingresoCategoryId, turnoId}) => {
+  createIngresoAdm: async ({ monto, descripcion, cajaId, aprovedId, ingresoCategoryId, turnoId }) => {
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-  
+
       // 🟡 Obtener la caja
       const cajaResult = await client.query(
         'SELECT id, "saldoActual", estado FROM cajas WHERE id = $1 LIMIT 1',
         [cajaId]
       );
-  
+
       if (cajaResult.rowCount === 0) {
         throw new Error('La caja no existe');
       }
-  
+
       if (cajaResult.rows[0].estado === 'cerrada') {
         throw new Error('La caja está cerrada.');
       }
 
       const saldoActual = parseFloat(cajaResult.rows[0].saldoActual);
-  
+
       // 🟢 Insertar ingreso
       const insertIngresoQuery = `
         INSERT INTO ingresos (
@@ -627,7 +627,7 @@ const Caja = {
       const ingresoValues = [monto, descripcion, 'aprobado', cajaId, ingresoCategoryId, aprovedId, aprovedId, turnoId];
       const ingresoResult = await client.query(insertIngresoQuery, ingresoValues);
       const ingreso = ingresoResult.rows[0];
-  
+
       // ✅ Registrar movimiento
       const saldoAnterior = saldoActual;
       const nuevoSaldo = (saldoAnterior + Number(monto));
@@ -663,10 +663,10 @@ const Caja = {
         WHERE id = $2;
       `;
       await client.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
-  
+
       await client.query('COMMIT');
       return ingreso;
-  
+
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -674,12 +674,12 @@ const Caja = {
       client.release();
     }
   },
-       
-  aprobarEgreso : async (egresoId, userId) => {
+
+  aprobarEgreso: async (egresoId, userId) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-  
+
       // Actualizar estado del egreso y registrar el usuario que aprobó
       const updateQuery = `
         UPDATE egresos
@@ -695,22 +695,22 @@ const Caja = {
         'SELECT id, "saldoActual", estado FROM cajas WHERE id = $1 LIMIT 1',
         [egreso.cajaId]
       );
-  
+
       if (cajaResult.rowCount === 0) {
         throw new Error('La caja no existe');
       }
-  
+
       if (cajaResult.rows[0].estado === 'cerrada') {
         throw new Error('La caja está cerrada.');
       }
 
       const saldoActual = parseFloat(cajaResult.rows[0].saldoActual);
-  
+
       // 🧮 Verificar saldo si es aprobado
       if (egreso.monto > saldoActual) {
         throw new Error('Saldo insuficiente en caja para realizar el egreso');
       }
-  
+
       // Registrar movimiento en caja
       const saldoAnterior = saldoActual;
       const nuevoSaldo = saldoAnterior - egreso.monto;
@@ -746,7 +746,7 @@ const Caja = {
         WHERE id = $2;
       `;
       await client.query(updateSaldoQuery, [nuevoSaldo, egreso.cajaId]);
-  
+
       await client.query('COMMIT');
       return egreso;
     } catch (error) {
@@ -757,33 +757,33 @@ const Caja = {
     }
   },
 
-  rechazarEgreso : async (egresoId, adminId) => {
+  rechazarEgreso: async (egresoId, adminId) => {
     const client = await pool.connect();
-  
+
     try {
       await client.query('BEGIN');
-  
+
       // Verificamos que el egreso exista
       const { rows } = await client.query(`SELECT * FROM egresos WHERE id = $1`, [egresoId]);
       if (rows.length === 0) throw new Error('Egreso no encontrado');
       const egreso = rows[0];
-  
+
       if (egreso.estado === 'aprobado') {
         throw new Error('No se puede rechazar un egreso ya aprobado');
       }
-  
+
       if (egreso.estado === 'rechazado') {
         throw new Error('Este egreso ya fue rechazado');
       }
-  
+
       // Actualizamos el estado a rechazado
       await client.query(`
         UPDATE egresos SET estado = 'rechazado', "user_rejected_id" = $2, "updatedAt" = NOW() WHERE id = $1
       `, [egresoId, adminId]);
-  
+
       await client.query('COMMIT');
       return { egresoId, estado: 'rechazado' };
-  
+
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -792,7 +792,7 @@ const Caja = {
     }
   },
 
-  listarEgresos : async (cajaId, filtros, page = 1, limit = 10) => {
+  listarEgresos: async (cajaId, filtros, page = 1, limit = 10) => {
     const {
       desde,
       hasta,
@@ -800,38 +800,38 @@ const Caja = {
       gastoCategoryId,
       cobrador // user_created_id
     } = filtros;
-  
+
     let conditions = [`e."cajaId" = $1`];
     let values = [cajaId];
     let index = 2;
-  
+
     if (desde) {
       conditions.push(`e."createdAt" >= $${index++}`);
       values.push(desde);
     }
-  
+
     if (hasta) {
       conditions.push(`e."createdAt" <= $${index++}`);
       values.push(hasta);
     }
-  
+
     if (estado) {
       conditions.push(`e.estado = $${index++}`);
       values.push(estado);
     }
-  
+
     if (gastoCategoryId) {
       conditions.push(`e."gastoCategoryId" = $${index++}`);
       values.push(gastoCategoryId);
     }
-  
+
     if (cobrador) {
       conditions.push(`e."user_created_id" = $${index++}`);
       values.push(cobrador);
     }
-  
+
     const offset = (page - 1) * limit;
-  
+
     const query = `
       SELECT 
       e.id,
@@ -856,11 +856,11 @@ const Caja = {
       LIMIT $${index++}
       OFFSET $${index++};
     `;
-  
+
     values.push(limit, offset);
-  
+
     const result = await pool.query(query, values);
-  
+
     // Total count para frontend
     const countQuery = `
       SELECT COUNT(*) FROM egresos e
@@ -868,7 +868,7 @@ const Caja = {
     `;
     const countResult = await pool.query(countQuery, values.slice(0, values.length - 2));
     const total = parseInt(countResult.rows[0].count);
-  
+
     return {
       egresos: result.rows,
       pagination: {
@@ -907,10 +907,10 @@ const Caja = {
       const countResult = await pool.query(countQuery, [turnoId]);
       const total = Number(countResult.rows[0].count);
       const totalPages = Math.ceil(total / limit);
-  
+
       const egresos = res?.rows?.map(row => {
         let usuario_estado = null;
-  
+
         if (row.estado === 'aprobado') {
           usuario_estado = {
             id: row.user_approved_id,
@@ -922,7 +922,7 @@ const Caja = {
             nombre: row.usuario_rechazo_nombre
           };
         }
-  
+
         return {
           id: row.id,
           monto: row.monto,
@@ -944,7 +944,7 @@ const Caja = {
           usuario_estado
         };
       });
-  
+
       return {
         data: egresos,
         total,
@@ -954,7 +954,7 @@ const Caja = {
       throw error;
     }
   },
-  
+
   getAbonosByTurno: async (turnoId, limit, offset) => {
     try {
       const result = await pool.query(`
@@ -968,19 +968,19 @@ const Caja = {
         LIMIT $2 OFFSET $3
       `, [turnoId, limit, offset]);
 
-    const countQuery = `
+      const countQuery = `
       SELECT COUNT(*) FROM pagos
       WHERE turno_id = $1 AND tipo = 'abono'
     `;
-    const countResult = await pool.query(countQuery, [turnoId]);
-    const total = Number(countResult.rows[0].count);
-    const totalPages = Math.ceil(total / limit);
+      const countResult = await pool.query(countQuery, [turnoId]);
+      const total = Number(countResult.rows[0].count);
+      const totalPages = Math.ceil(total / limit);
 
-    return {
-      data: result.rows,
-      total,
-      totalPages
-    };
+      return {
+        data: result.rows,
+        total,
+        totalPages
+      };
 
     } catch (error) {
       throw error;
@@ -1000,19 +1000,19 @@ const Caja = {
         LIMIT $2 OFFSET $3
       `, [turnoId, limit, offset]);
 
-    const countQuery = `
+      const countQuery = `
       SELECT COUNT(*) FROM pagos
       WHERE turno_id = $1 AND tipo = 'abono' AND estado = 'aprobado'
     `;
-    const countResult = await pool.query(countQuery, [turnoId]);
-    const total = Number(countResult.rows[0].count);
-    const totalPages = Math.ceil(total / limit);
+      const countResult = await pool.query(countQuery, [turnoId]);
+      const total = Number(countResult.rows[0].count);
+      const totalPages = Math.ceil(total / limit);
 
-    return {
-      data: result.rows,
-      total,
-      totalPages
-    };
+      return {
+        data: result.rows,
+        total,
+        totalPages
+      };
 
     } catch (error) {
       throw error;
@@ -1173,17 +1173,17 @@ const Caja = {
       client.release();
     }
   },
-           
+
   getAllEgresos: async (offset, limit, userId, oficinaId, rutaId, searchTerm = '') => {
     const search = `%${searchTerm}%`;
     let cajaUserIds = [];
-  
+
     if (!oficinaId && !rutaId && userId) {
       const oficinasRes = await pool.query(`
         SELECT "oficinaId" FROM usuariooficinas WHERE "usuarioId" = ${userId}
       `);
       const oficinaIds = oficinasRes.rows.map(row => row.oficinaId);
-      
+
       if (oficinaIds.length > 0) {
         const rutasRes = await pool.query(`
           SELECT "userId" FROM ruta WHERE "oficinaId" IN (${oficinaIds.join(',')})
@@ -1191,14 +1191,14 @@ const Caja = {
         cajaUserIds = rutasRes.rows.map(row => row.userId);
       }
     }
-  
+
     if (oficinaId) {
       const rutasRes = await pool.query(`
         SELECT "userId" FROM ruta WHERE "oficinaId" = ${oficinaId}
       `);
       cajaUserIds = rutasRes.rows.map(row => row.userId);
     }
-  
+
     if (rutaId) {
       const rutaRes = await pool.query(`
         SELECT "userId" FROM ruta WHERE id = ${rutaId}
@@ -1209,15 +1209,15 @@ const Caja = {
         return { egresos: [], total: 0, totalPages: 0, currentPage: 1 };
       }
     }
-  
+
     let whereClause = `(e.estado ILIKE '${search}' OR e.descripcion ILIKE '${search}')`;
-  
+
     if (cajaUserIds.length > 0) {
       whereClause += ` AND c."usuarioId" IN (${cajaUserIds.join(',')})`;
     } else if (!oficinaId && !rutaId) {
       whereClause += ` AND false`;
     }
-  
+
     const queryText = `
       SELECT 
         e.*, 
@@ -1228,22 +1228,22 @@ const Caja = {
       ORDER BY e."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
-  
+
     const countQuery = `
       SELECT COUNT(*) 
       FROM egresos e
       LEFT JOIN cajas c ON e."cajaId" = c.id
       WHERE ${whereClause};
     `;
-  
+
     const [egresosRes, countRes] = await Promise.all([
       pool.query(queryText),
       pool.query(countQuery),
     ]);
-  
+
     const total = parseInt(countRes.rows[0].count, 10);
     const totalPages = Math.ceil(total / limit);
-  
+
     const egresos = egresosRes.rows.map(row => ({
       id: row.id,
       monto: row.monto,
@@ -1254,24 +1254,24 @@ const Caja = {
       updatedAt: row.updatedAt,
       usuarioId: row.usuarioId,
     }));
-  
+
     return {
       egresos,
       total,
       totalPages,
       currentPage: Math.ceil(offset / limit) + 1,
     };
-  },          
+  },
 
   getEgresosDia: async (userId, page = 1, pageSize = 10, search = '') => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-  
+
       //Obtener la ruta asignada al usuario
 
       const ruta = await Ruta.getByUserId(userId);
-      if(!ruta) {
+      if (!ruta) {
         throw new Error('No tienes una ruta asignada');
       }
 
@@ -1282,14 +1282,14 @@ const Caja = {
       );
       const cajaId = caja.rows[0]?.id;
       if (!cajaId) throw new Error('Caja no encontrada');
-  
+
       const offset = (page - 1) * pageSize;
-  
+
       // Si hay un search, lo usamos. Si no, buscamos todos los egresos
       let totalRes, res;
       if (search.trim()) {
         const searchQuery = `%${search}%`;
-  
+
         // Obtener total de registros con filtro de búsqueda
         totalRes = await client.query(
           `SELECT COUNT(*) FROM egresos 
@@ -1297,7 +1297,7 @@ const Caja = {
            AND LOWER(descripcion) LIKE LOWER($2)`,
           [cajaId, searchQuery]
         );
-  
+
         // Obtener los egresos paginados con filtro de búsqueda
         res = await client.query(
           `SELECT * FROM egresos 
@@ -1314,7 +1314,7 @@ const Caja = {
            WHERE "cajaId" = $1 AND DATE("createdAt") = CURRENT_DATE`,
           [cajaId]
         );
-  
+
         res = await client.query(
           `SELECT * FROM egresos 
            WHERE "cajaId" = $1 AND DATE("createdAt") = CURRENT_DATE
@@ -1323,9 +1323,9 @@ const Caja = {
           [cajaId, pageSize, offset]
         );
       }
-  
+
       const total = parseInt(totalRes.rows[0].count, 10);
-  
+
       return {
         data: res.rows,
         page,
@@ -1333,7 +1333,7 @@ const Caja = {
         total,
         totalPages: Math.ceil(total / pageSize)
       };
-  
+
     } catch (error) {
       throw error;
     } finally {
@@ -1351,14 +1351,12 @@ const Caja = {
        WHERE p.id = $1 LIMIT 1`,
       [id]
     );
-  
+
     if (pagoData.rowCount === 0) {
       return null;
     }
-  
+
     return pagoData.rows[0]; // solo devuelves los datos
   }
-  
-};
 
-module.exports = Caja;
+});

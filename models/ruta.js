@@ -1,11 +1,22 @@
 const db = require('../config/db');
 
-const Ruta = {
+module.exports = (db) => ({
   // Crear una nueva ruta y asignarla al usuario en usuariorutas + crear config_credits
   create: async (rutaData) => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
+
+      // 0️⃣ Validar límite de rutas
+      const countResult = await client.query('SELECT COUNT(*) FROM ruta');
+      const currentRoutes = parseInt(countResult.rows[0].count);
+
+      const configResultLimit = await client.query('SELECT routes_limit FROM config_default WHERE id = 1');
+      const limit = configResultLimit.rows.length > 0 ? (configResultLimit.rows[0].routes_limit || 1) : 1;
+
+      if (currentRoutes >= limit) {
+        throw new Error(`Límite de rutas alcanzado (${limit}). Por favor, actualiza tu suscripción para añadir más rutas.`);
+      }
 
       // 1️⃣ Insertar la nueva ruta
       const queryText = `
@@ -199,11 +210,11 @@ const Ruta = {
     const totalPages = Math.ceil(total / limit);
 
     return {
-        data: rows,
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages
+      data: rows,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages
     };
   },
 
@@ -413,13 +424,13 @@ const Ruta = {
   // Eliminar una ruta y su relación en usuariorutas + eliminar configuración de crédito
   delete: async (id) => {
     const client = await db.connect();
-    
+
     try {
       await client.query('BEGIN');
 
       // Verificar si hay clientes asociados a la ruta
       const checkClientes = await client.query(
-        `SELECT id FROM clientes WHERE "rutaId" = $1;`, 
+        `SELECT id FROM clientes WHERE "rutaId" = $1;`,
         [id]
       );
 
@@ -451,6 +462,4 @@ const Ruta = {
       client.release();
     }
   }
-};
-
-module.exports = Ruta;
+});

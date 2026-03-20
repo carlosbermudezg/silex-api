@@ -6,23 +6,14 @@ require("dotenv").config();
 
 const cors = require('cors');
 
+const getTenant = require('./middlewares/getTenant');
+const resolveTenant = require('./middlewares/resolveTenant');
+const dbMiddleware = require('./middlewares/dbMiddleware');
+
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
-// Lista de orígenes permitidos
-const allowedOrigins = [`${ process.env.APP_WEB}`,`${ process.env.APP_MOVIL}`,`${ process.env.APP_WEB_LOCAL}`,`${ process.env.APP_MOVIL_LOCAL}`,`${ process.env.APP_MOVIL_LOCAL_REMOTO}`];
-app.use(cors({
-  origin: function (origin, callback) {
-    // Permitir requests sin origin (como en curl o servidores internos)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    } else {
-      return callback(new Error('No permitido por CORS'));
-    }
-  },
-  credentials: false // si usas cookies o auth headers
-}));
+app.use(cors());
 
 // Definir la configuración para Swagger (Documentación)
 const swaggerOptions = {
@@ -44,17 +35,32 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 // Aumenta el límite de tamaño del cuerpo de la solicitud
 app.use(express.json({ limit: "10mb" })); // Aumenta el límite a 10MB
-app.use(express.urlencoded({ limit: "10mb", extended: true })); 
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 app.use(helmet({
-    crossOriginResourcePolicy: false,
+  crossOriginResourcePolicy: false,
 }));
 
 // Middleware para procesar JSON
 app.use(express.json());
 
+//Middleware para agregar schema dinámico
+app.use(getTenant);
+app.use(resolveTenant);
+app.use(dbMiddleware);
+
 // Todas las rutas
 app.use('/api/v1', router)
+
+// Manejador de errores global
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  const status = err.status || 400;
+  res.status(status).json({
+    error: err.message || 'Error interno del servidor'
+  });
+});
+
 // Ruta principal
 app.get("/", (req, res) => {
   res.send("Sistema de Préstamos API");

@@ -1,6 +1,6 @@
 const db = require('../config/db');
 
-const Permiso = {
+module.exports = (db) => ({
   // Crear un permiso con un array en descripcion
   create: async (permisoData) => {
     const queryText = `
@@ -11,7 +11,7 @@ const Permiso = {
     const descripcion = Array.isArray(permisoData.descripcion) ? permisoData.descripcion : [permisoData.descripcion];
     const values = [permisoData.nombre, descripcion];
     const { rows } = await db.query(queryText, values);
-    
+
     // Convertir descripcion a un array antes de devolverlo
     const permisoCreado = rows[0];
     permisoCreado.descripcion = Array.isArray(permisoCreado.descripcion) ? permisoCreado.descripcion : [permisoCreado.descripcion];
@@ -87,6 +87,4 @@ const Permiso = {
     const { rows } = await db.query(queryText, [id]);
     return rows.length ? rows[0] : null;
   }
-};
-
-module.exports = Permiso;
+});

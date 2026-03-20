@@ -1,5 +1,5 @@
 // controllers/cajaController.js
-const Caja = require('../models/caja'); // Importar el modelo de Caja
+const CajaModel = require('../models/caja'); // Importar el modelo de Caja
 const PDFDocument = require('pdfkit');
 const catchError = require('../utils/catchError');  // Para manejo de errores
 const path = require('path');
@@ -7,15 +7,17 @@ const QRCode = require('qrcode');
 
 // Función para obtener todas las cajas
 const getAllCajas = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const cajas = await Caja.getAll();
   return res.status(200).json(cajas);
 });
 
 // Función para obtener una caja por su ID
 const getCajaById = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const caja = await Caja.getById(id);
-  
+
   if (!caja) {
     return res.status(404).json({ message: 'Caja no encontrada' });
   }
@@ -25,9 +27,10 @@ const getCajaById = catchError(async (req, res) => {
 
 // Función para obtener una caja por su ID
 const getTurno = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const caja = await Caja.getTurnoById(id);
-  
+
   if (!caja) {
     return res.status(404).json({ message: 'No hay un turno activo' });
   }
@@ -37,9 +40,10 @@ const getTurno = catchError(async (req, res) => {
 
 // Función para obtener una caja por su ID
 const getCajaByUserId = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const caja = await Caja.getByUserId(id);
-  
+
   if (!caja) {
     return res.status(404).json({ message: 'Caja no encontrada' });
   }
@@ -49,9 +53,10 @@ const getCajaByUserId = catchError(async (req, res) => {
 
 // Función para obtener una caja por su ID
 const getCajaByRutaId = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const caja = await Caja.getByRutaId(id);
-  
+
   if (!caja) {
     return res.status(404).json({ message: 'Caja no encontrada' });
   }
@@ -61,6 +66,7 @@ const getCajaByRutaId = catchError(async (req, res) => {
 
 // Función para actualizar el saldo de una caja
 const updateCaja = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const { saldoActual } = req.body;
 
@@ -75,6 +81,7 @@ const updateCaja = catchError(async (req, res) => {
 
 // Función para eliminar una caja (en este caso, la marcamos como inactiva)
 const deleteCaja = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
 
   const deletedRows = await Caja.delete(id);
@@ -84,33 +91,35 @@ const deleteCaja = catchError(async (req, res) => {
   }
 
   return res.status(204).json();
-}); 
+});
 
 // Función para agregar saldo a la caja de un usuario
 const agregarSaldo = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { rutaId, monto, adminId } = req.body;
-  try{
+  try {
     // Llamar a la función del modelo para agregar saldo
     const resultado = await Caja.agregarSaldo(adminId, rutaId, monto);
-  
+
     return res.status(200).json({
       message: resultado.message,
       nuevoSaldoUsuario: resultado.nuevoSaldoUsuario,
       nuevoSaldoAdmin: resultado.nuevoSaldoAdmin,
     });
-  } catch(error){
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
 // Asignar saldo a un administrador de oficina
 const asignarSaldoAOficina = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { adminId, oficinaAdminId, monto } = req.body;
 
-  try{
+  try {
     const resultado = await Caja.asignarSaldoAOficina(adminId, oficinaAdminId, monto);
     return res.status(200).json({ message: resultado.message, saldoActual: resultado.nuevoSaldoOficina });
-  }catch(error){
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 
@@ -118,6 +127,7 @@ const asignarSaldoAOficina = catchError(async (req, res) => {
 
 // Endpoint: cierre de caja
 const cerrarCaja = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { userId } = req.user;
   const { cajaId } = req.body
 
@@ -131,6 +141,7 @@ const cerrarCaja = catchError(async (req, res) => {
 
 // Endpoint: cierre de caja
 const bloquearCaja = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { cajaId, estado } = req.body;
 
   if (!cajaId === undefined) {
@@ -142,6 +153,7 @@ const bloquearCaja = catchError(async (req, res) => {
 });
 
 const abrirCaja = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { cajaId } = req.body;
   const { userId } = req.user;
 
@@ -158,7 +170,8 @@ const abrirCaja = catchError(async (req, res) => {
   return res.status(200).json({ success: true, message: resultado.message });
 });
 
-const getMovimientosByTurno = catchError( async (req, res) => {
+const getMovimientosByTurno = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   try {
     const { turnoId, page = 1, limit = 10 } = req.query;
 
@@ -190,6 +203,7 @@ const getMovimientosByTurno = catchError( async (req, res) => {
 });
 
 const crearEgreso = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { descripcion, monto, gastoCategoryId, foto, turnoId } = req.body;
   const { role, userId } = req.user;
 
@@ -214,6 +228,7 @@ const crearEgreso = catchError(async (req, res) => {
 });
 
 const crearEgresoAdm = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { descripcion, monto, gastoCategoryId, cajaId, turnoId } = req.body;
   const { userId } = req.user;
 
@@ -238,6 +253,7 @@ const crearEgresoAdm = catchError(async (req, res) => {
 });
 
 const crearIngresoAdm = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { descripcion, monto, ingresoCategoryId, cajaId, turnoId } = req.body;
   const { userId } = req.user;
 
@@ -252,7 +268,7 @@ const crearIngresoAdm = catchError(async (req, res) => {
       cajaId,
       ingresoCategoryId,
       aprovedId: userId,
-      turnoId : turnoId
+      turnoId: turnoId
     });
 
     return res.status(201).json({ success: true, data: ingreso });
@@ -262,6 +278,7 @@ const crearIngresoAdm = catchError(async (req, res) => {
 });
 
 const aprobarEgreso = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const { role, userId } = req.user;
 
@@ -278,6 +295,7 @@ const aprobarEgreso = catchError(async (req, res) => {
 });
 
 const rechazarEgreso = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const { role, userId } = req.user;
 
@@ -294,6 +312,7 @@ const rechazarEgreso = catchError(async (req, res) => {
 });
 
 const anularAbono = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id, motivo } = req.body;
   const { userId } = req.user;
 
@@ -306,6 +325,7 @@ const anularAbono = catchError(async (req, res) => {
 });
 
 const listarEgresos = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const cajaId = req.user.cajaId;
 
   const filtros = {
@@ -325,10 +345,11 @@ const listarEgresos = catchError(async (req, res) => {
 
 // Función para obtener los egresos listados por id de turno
 const getOpenTurnos = catchError(async (req, res) => {
-  const {page = 1 , limit = 10, search = ''} = req.query;
+  const Caja = CajaModel(req.db);
+  const { page = 1, limit = 10, search = '' } = req.query;
   const offset = (page - 1) * limit;
   const result = await Caja.getOpenTurnos(limit, offset, search);
-  
+
   if (!result) {
     return res.status(404).json({ message: 'No hay cajas disponibles' });
   }
@@ -345,11 +366,12 @@ const getOpenTurnos = catchError(async (req, res) => {
 
 // Función para obtener los egresos listados por id de turno
 const getEgresosByTurno = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
-  const {page = 1 , limit = 10} = req.query;
+  const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * limit;
   const result = await Caja.getEgresosByTurno(id, limit, offset);
-  
+
   if (!result) {
     return res.status(404).json({ message: 'No hay egresos disponibles' });
   }
@@ -366,11 +388,12 @@ const getEgresosByTurno = catchError(async (req, res) => {
 
 // Función para obtener los egresos listados por id de turno
 const getAbonosByTurno = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const { limit = 10, page = 1 } = req.query
   const offset = (page - 1) * limit;
   const abonos = await Caja.getAbonosByTurno(id, limit, offset);
-  
+
   if (!abonos) {
     return res.status(404).json({ message: 'No hay abonos disponibles' });
   }
@@ -385,11 +408,12 @@ const getAbonosByTurno = catchError(async (req, res) => {
 });
 
 const getValidAbonosByTurno = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const { limit = 10, page = 1 } = req.query
   const offset = (page - 1) * limit;
   const abonos = await Caja.getValidAbonosByTurno(id, limit, offset);
-  
+
   if (!abonos) {
     return res.status(404).json({ message: 'No hay abonos disponibles' });
   }
@@ -405,6 +429,7 @@ const getValidAbonosByTurno = catchError(async (req, res) => {
 
 // Función para obtener comprobante por id pdf
 const getComprobanteById = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const { id } = req.params;
   const pago = await Caja.getComprobanteById(id);
 
@@ -421,7 +446,7 @@ const getComprobanteById = catchError(async (req, res) => {
   const doc = new PDFDocument({
     size: [300, 400],
     margin: 20
-  }); 
+  });
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="Comprobante_pago_${id}_${pago.nombre}.pdf"`);
@@ -470,7 +495,7 @@ const getComprobanteById = catchError(async (req, res) => {
   // 4. Insertar el QR (desde base64)
   const qrBuffer = Buffer.from(qrImageDataUrl.split(',')[1], 'base64');
 
-  
+
   const imageWidth = 100;
   const imageHeight = 100;
   const x = (doc.page.width - imageWidth) / 2;
@@ -494,6 +519,7 @@ const getComprobanteById = catchError(async (req, res) => {
 });
 
 const getAllEgresos = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const authUserId = req.user.userId; // Este es el usuario autenticado (quien hace la petición)
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -506,11 +532,12 @@ const getAllEgresos = catchError(async (req, res) => {
 
   // Pasamos el ID del usuario autenticado para que el modelo resuelva sus oficinas y rutas
   const data = await Caja.getAllEgresos(offset, limit, authUserId, oficinaId, rutaId, searchTerm, fechaInicio, fechaFin);
-  
+
   return res.status(200).json(data);
 });
 
 const getEgresosDia = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
   const page = parseInt(req.query.page) || 1;
   const pageSize = parseInt(req.query.limit) || 10;
   const search = req.query.search;

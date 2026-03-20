@@ -1,30 +1,32 @@
 // controllers/trasladoController.js
 const catchError = require('../utils/catchError');
-const Traslado = require('../models/traslado');
+const TrasladoModel = require('../models/traslado');
 
 const getTrasladosClientesPaginados = catchError(async (req, res) => {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-  
-    const allTraslados = await Traslado.getAllTraslados();
-  
-    const total = allTraslados.length;
-    const totalPages = Math.ceil(total / limit);
-    const start = (page - 1) * limit;
-    const end = start + limit;
-  
-    const paginated = allTraslados.slice(start, end);
-  
-    return res.status(200).json({
-      data: paginated,
-      total,
-      page,
-      limit,
-      totalPages
-    });
+  const Traslado = TrasladoModel(req.db);
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+
+  const allTraslados = await Traslado.getAllTraslados();
+
+  const total = allTraslados.length;
+  const totalPages = Math.ceil(total / limit);
+  const start = (page - 1) * limit;
+  const end = start + limit;
+
+  const paginated = allTraslados.slice(start, end);
+
+  return res.status(200).json({
+    data: paginated,
+    total,
+    page,
+    limit,
+    totalPages
+  });
 });
 
 const createClienteTrasladoMasivo = catchError(async (req, res) => {
+  const Traslado = TrasladoModel(req.db);
   const {
     oficina_origen_id,
     ruta_origen_id,
@@ -59,6 +61,7 @@ const createClienteTrasladoMasivo = catchError(async (req, res) => {
 });
 
 const createRutaTraslado = catchError(async (req, res) => {
+  const Traslado = TrasladoModel(req.db);
   const {
     ruta_id,
     oficina_origen_id,
@@ -84,6 +87,7 @@ const createRutaTraslado = catchError(async (req, res) => {
 });
 
 const createTrasladoEfectivo = catchError(async (req, res) => {
+  const Traslado = TrasladoModel(req.db);
   const {
     ruta_origen_id,
     ruta_destino_id,
@@ -117,8 +121,8 @@ const createTrasladoEfectivo = catchError(async (req, res) => {
 });
 
 module.exports = {
-    getTrasladosClientesPaginados,
-    createClienteTrasladoMasivo,
-    createRutaTraslado,
-    createTrasladoEfectivo
+  getTrasladosClientesPaginados,
+  createClienteTrasladoMasivo,
+  createRutaTraslado,
+  createTrasladoEfectivo
 };

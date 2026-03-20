@@ -1,6 +1,6 @@
 const db = require('../config/db');
 
-const Oficina = {
+module.exports = (db) => ({
   //Crear una nueva oficina
   create: async (oficinaData) => {
     // Insertar la oficina
@@ -11,7 +11,7 @@ const Oficina = {
     const values = [oficinaData.nombre, oficinaData.direccion, oficinaData.telefono];
     const { rows } = await db.query(queryText, values);
     const oficina = rows[0];
-  
+
     // Insertar relación en usuariooficinas si hay un userId
     if (oficinaData.userId) {
       await db.query(
@@ -19,7 +19,7 @@ const Oficina = {
         [oficinaData.userId, oficina.id]
       );
     }
-  
+
     return oficina;
   },
 
@@ -280,10 +280,10 @@ const Oficina = {
     const values = [updateData.nombre, updateData.direccion, updateData.telefono, id];
     const { rows } = await db.query(queryText, values);
     const oficina = rows[0];
-  
+
     // Eliminar relación previa en usuariooficinas
     await db.query(`DELETE FROM usuariooficinas WHERE "oficinaId" = $1;`, [id]);
-  
+
     // Insertar nueva relación si hay un userId
     if (updateData.userId) {
       await db.query(
@@ -291,9 +291,9 @@ const Oficina = {
         [updateData.userId, id]
       );
     }
-  
+
     return oficina;
-  },  
+  },
 
   // Verificar si la oficina tiene rutas asociadas
   hasRutas: async (id) => {
@@ -359,6 +359,4 @@ const Oficina = {
 
     return { message: "Oficina eliminada correctamente." };
   }
-};
-
-module.exports = Oficina;
+});

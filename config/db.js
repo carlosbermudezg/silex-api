@@ -8,8 +8,7 @@ const pool = new Pool({
   host: process.env.PGHOST,
   database: process.env.PGDATABASE,
   password: process.env.PGPASSWORD,
-  port: process.env.PGPORT,
-  options: `-c search_path=${process.env.PGSCHEMA}`
+  port: process.env.PGPORT
 });
 
 // Configurar la zona horaria en cada conexión

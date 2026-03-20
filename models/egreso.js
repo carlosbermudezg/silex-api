@@ -1,8 +1,8 @@
 const db = require('../config/db');
 
-const Egreso = {
+module.exports = (db) => ({
   // Crear una nueva ruta y asignarla al usuario en usuariorutas + crear config_credits
-  create: async (rutaData) => { 
+  create: async (rutaData) => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
@@ -199,11 +199,11 @@ const Egreso = {
     const totalPages = Math.ceil(total / limit);
 
     return {
-        data: rows,
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages
+      data: rows,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages
     };
   },
 
@@ -395,9 +395,9 @@ const Egreso = {
       WHERE cr."usuarioId" = $1
       GROUP BY cl.id, cr.id, cuota_pendiente.monto, cuota_pendiente."fechaPago", cuota_pendiente.monto_pagado;
     `;
-  
+
     const { rows } = await db.query(query, [usuarioId]);
-  
+
     return rows
       .map(row => ({
         lat: row.lat,
@@ -410,18 +410,18 @@ const Egreso = {
         creditoId: row.creditoId
       }))
       .filter(cliente => cliente.cuota > 0 || cliente.cuotasAtrasadas > 0);
-  },    
+  },
 
   // Eliminar una ruta y su relación en usuariorutas + eliminar configuración de crédito
   delete: async (id) => {
     const client = await db.connect();
-    
+
     try {
       await client.query('BEGIN');
 
       // Verificar si hay clientes asociados a la ruta
       const checkClientes = await client.query(
-        `SELECT id FROM clientes WHERE "rutaId" = $1;`, 
+        `SELECT id FROM clientes WHERE "rutaId" = $1;`,
         [id]
       );
 
@@ -453,6 +453,4 @@ const Egreso = {
       client.release();
     }
   }
-};
-
-module.exports = Egreso;
+});

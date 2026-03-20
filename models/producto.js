@@ -1,6 +1,6 @@
 const db = require('../config/db');
 
-const Producto = {
+module.exports = (db) => ({
   // Crear un producto con rutas asignadas
   create: async (productoData) => {
     // Crear el producto primero
@@ -112,10 +112,8 @@ const Producto = {
       AND p.estado = 'activo'
       AND p.stock > 0
     `;
-  
+
     const result = await db.query(queryText, [rutaId]);
     return result.rows;
   }
-};
-
-module.exports = Producto;
+});

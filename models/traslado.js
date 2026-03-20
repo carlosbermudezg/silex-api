@@ -1,7 +1,7 @@
 // models/Traslado.js
 const pool = require('../config/db');
 
-const Traslado = {
+module.exports = (db) => ({
   createClienteTrasladoMasivo: async (data) => {
     const {
       oficina_origen_id,
@@ -12,12 +12,12 @@ const Traslado = {
       motivo_traslado,
       user_create
     } = data;
-  
+
     const client = await pool.connect();
-  
+
     try {
       await client.query('BEGIN');
-  
+
       const insertQuery = `
         INSERT INTO traslado_clientes (
           oficina_origen_id,
@@ -34,9 +34,9 @@ const Traslado = {
         )
         RETURNING *;
       `;
-  
+
       const insertResults = [];
-  
+
       for (const cliente_id of cliente_ids) {
         const result = await client.query(insertQuery, [
           oficina_origen_id,
@@ -49,20 +49,20 @@ const Traslado = {
         ]);
         insertResults.push(result.rows[0]);
       }
-  
+
       // Actualizar todos los clientes trasladados
       const updateQuery = `
         UPDATE clientes
         SET "rutaId" = $1
         WHERE id = ANY($2::int[])
       `;
-  
+
       await client.query(updateQuery, [ruta_destino_id, cliente_ids]);
-  
+
       await client.query('COMMIT');
-  
+
       return insertResults;
-  
+
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Error en traslado masivo de clientes', error);
@@ -98,7 +98,7 @@ const Traslado = {
       LEFT JOIN usuarios u ON u.id = t.user_create
       ORDER BY t.created_at DESC
     `;
-  
+
     const result = await pool.query(query);
     return result.rows;
   },
@@ -110,12 +110,12 @@ const Traslado = {
       motivo_traslado,
       user_create
     } = data;
-  
+
     const client = await pool.connect();
-  
+
     try {
       await client.query('BEGIN');
-  
+
       // Insertar el registro de traslado
       const insertQuery = `
         INSERT INTO traslado_rutas (
@@ -129,7 +129,7 @@ const Traslado = {
         ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
         RETURNING *;
       `;
-  
+
       const result = await client.query(insertQuery, [
         ruta_id,
         oficina_origen_id,
@@ -137,18 +137,18 @@ const Traslado = {
         motivo_traslado,
         user_create
       ]);
-  
+
       // Actualizar la ruta con la nueva oficina
       const updateQuery = `
         UPDATE ruta
         SET "oficinaId" = $1
         WHERE id = $2
       `;
-  
+
       await client.query(updateQuery, [oficina_destino_id, ruta_id]);
-  
+
       await client.query('COMMIT');
-  
+
       return result.rows[0];
     } catch (error) {
       await client.query('ROLLBACK');
@@ -166,12 +166,12 @@ const Traslado = {
       motivo_traslado,
       user_create
     } = data;
-  
+
     const client = await pool.connect();
-  
+
     try {
       await client.query('BEGIN');
-  
+
       // Insertar registro traslado_efectivo
       const insertTrasladoQuery = `
         INSERT INTO traslado_efectivo (
@@ -193,7 +193,7 @@ const Traslado = {
         user_create
       ]);
       const traslado = trasladoResult.rows[0];
-  
+
       // Obtener nombres de las rutas
       const rutaNombresQuery = `
         SELECT id, nombre
@@ -205,10 +205,10 @@ const Traslado = {
       rutasRes.rows.forEach(r => {
         rutasMap[r.id] = r.nombre;
       });
-  
+
       const nombreRutaOrigen = rutasMap[ruta_origen_id] || `Ruta ${ruta_origen_id}`;
       const nombreRutaDestino = rutasMap[ruta_destino_id] || `Ruta ${ruta_destino_id}`;
-  
+
       // Validar que las cajas estén abiertas y obtener sus datos (saldoActual, id)
       const cajaOrigenQuery = `
         SELECT c.id, c."saldoActual", t.id AS "turnoId"
@@ -222,25 +222,25 @@ const Traslado = {
         LEFT JOIN turnos t ON t.caja_id = c.id AND t.fecha_cierre IS NULL
         WHERE c."rutaId" = $1 AND c.estado = 'abierta'
       `;
-  
+
       const cajaOrigenRes = await client.query(cajaOrigenQuery, [ruta_origen_id]);
       const cajaDestinoRes = await client.query(cajaDestinoQuery, [ruta_destino_id]);
-  
+
       if (cajaOrigenRes.rowCount === 0) {
         return { error: 'Caja origen no tiene turno abierto o está cerrada' };
       }
       if (cajaDestinoRes.rowCount === 0) {
         return { error: 'Caja destino no tiene turno abierto o está cerrada' };
       }
-  
+
       const cajaOrigen = cajaOrigenRes.rows[0];
       const cajaDestino = cajaDestinoRes.rows[0];
-  
+
       // Validar saldo suficiente en caja origen
       if (cajaOrigen.saldoActual < monto) {
         return { error: 'Saldo insuficiente en la caja origen' };
       }
-  
+
       // Actualizar saldo en caja origen (restar monto)
       const nuevoSaldoOrigen = parseFloat(cajaOrigen.saldoActual) - parseFloat(monto);
       const updateCajaOrigenQuery = `
@@ -248,7 +248,7 @@ const Traslado = {
         WHERE id = $2
       `;
       await client.query(updateCajaOrigenQuery, [nuevoSaldoOrigen, cajaOrigen.id]);
-  
+
       // Registrar movimiento en caja origen con nombre de ruta
       const insertMovimientoOrigenQuery = `
         INSERT INTO movimientos_caja (
@@ -276,7 +276,7 @@ const Traslado = {
         cajaOrigen.turnoId,
         'egreso'
       ]);
-  
+
       // Actualizar saldo en caja destino (sumar monto)
       const nuevoSaldoDestino = parseFloat(cajaDestino.saldoActual) + parseFloat(monto);
       const updateCajaDestinoQuery = `
@@ -284,7 +284,7 @@ const Traslado = {
         WHERE id = $2
       `;
       await client.query(updateCajaDestinoQuery, [nuevoSaldoDestino, cajaDestino.id]);
-  
+
       // Registrar movimiento en caja destino con nombre de ruta
       const insertMovimientoDestinoQuery = `
         INSERT INTO movimientos_caja (
@@ -312,7 +312,7 @@ const Traslado = {
         cajaDestino.turnoId,
         'ingreso'
       ]);
-  
+
       await client.query('COMMIT');
       return traslado;
     } catch (error) {
@@ -322,7 +322,5 @@ const Traslado = {
     } finally {
       client.release();
     }
-  },  
-};
-
-module.exports = Traslado;
+  },
+});

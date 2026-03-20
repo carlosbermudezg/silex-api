@@ -3,7 +3,7 @@ const Caja = require('./caja');
 const Cliente = require('./cliente');
 const Config = require('./config');
 
-const Credito = {
+module.exports = (db) => ({
   // Crear un crédito
   create: async (creditoData) => {
     const client = await db.connect();
@@ -170,28 +170,28 @@ const Credito = {
   // modelo/Credito.js
   getAll: async (limit, offset, searchTerm = '', userId, oficinaId, rutaId) => {
     const search = `%${searchTerm}%`;
-  
+
     // Comienza el WHERE para los filtros básicos de búsqueda
     let whereClause = `
       (c.estado ILIKE '${search}' OR
        c.frecuencia_pago ILIKE '${search}' OR
        r.nombre ILIKE '${search}')
     `;
-    
+
     let joins = `
       LEFT JOIN clientes cl ON c."clienteId" = cl.id
       LEFT JOIN ruta r ON cl."rutaId" = r.id
     `;
-  
+
     // Si se selecciona una ruta, filtra por esa ruta
     if (rutaId) {
       whereClause += ` AND cl."rutaId" = ${rutaId}`;
-    } 
+    }
     // Si se selecciona una oficina, filtra por las rutas de esa oficina
     else if (oficinaId) {
       joins += ` LEFT JOIN oficinas o ON r."oficinaId" = o.id `;
       whereClause += ` AND o.id = ${oficinaId}`;
-    } 
+    }
     // Si no se selecciona ni oficina ni ruta, filtra por las rutas de las oficinas del usuario
     else if (userId) {
       // Obtener las oficinas a las que el usuario está asignado
@@ -201,13 +201,13 @@ const Credito = {
         LEFT JOIN oficinas o ON uo."oficinaId" = o.id
         WHERE uo."usuarioId" = ${userId}
       `;
-      
+
       const userOfficesRes = await db.query(userOfficesQuery);
-      
+
       if (userOfficesRes.rows.length > 0) {
         // Si el usuario tiene oficinas asignadas, obtenemos las rutas asociadas a esas oficinas
         const officeIds = userOfficesRes.rows.map(row => row.oficina_id);
-        
+
         joins += ` LEFT JOIN oficinas o ON r."oficinaId" = o.id `;
         whereClause += ` AND o.id IN (${officeIds.join(', ')})`;
       } else {
@@ -215,7 +215,7 @@ const Credito = {
         whereClause += ` AND 1=0`;  // Esto asegura que no se devuelvan resultados si el usuario no tiene oficinas.
       }
     }
-  
+
     // Consulta para obtener los créditos
     const queryText = `
       SELECT 
@@ -230,7 +230,7 @@ const Credito = {
       ORDER BY c."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
-  
+
     // Consulta para obtener el conteo total de créditos
     const countQuery = `
       SELECT COUNT(*) 
@@ -238,15 +238,15 @@ const Credito = {
       ${joins}
       WHERE ${whereClause};
     `;
-  
+
     // Ejecutamos ambas consultas
     const [creditosRes, countRes] = await Promise.all([
       db.query(queryText),
       db.query(countQuery),
     ]);
-  
+
     const totalCreditos = parseInt(countRes.rows[0].count, 10);
-  
+
     // Mapeamos los resultados
     const creditos = creditosRes.rows.map(row => ({
       id: row.id,
@@ -272,7 +272,7 @@ const Credito = {
         nombre: row.ruta_nombre,
       }
     }));
-  
+
     return { creditos, totalCreditos };
   },
 
@@ -422,7 +422,7 @@ const Credito = {
   },
 
   getDataDashBars: async (frecuencia, rutaId) => {
-    if(rutaId === null){
+    if (rutaId === null) {
       return []
     }
     try {
@@ -482,18 +482,18 @@ const Credito = {
         )
         SELECT * FROM resultados;
       `;
-  
+
       const data = await db.query(queryText, [frecuencia, rutaId]);
-  
+
       if (frecuencia === 'diario') {
         const hoyLocal = new Date();
         const hoyString = hoyLocal.toISOString().split('T')[0]; // "YYYY-MM-DD"
-  
+
         const rowDiario = data.rows.find(row => {
           const rowDate = new Date(row.fecha).toISOString().split('T')[0];
           return rowDate === hoyString;
         });
-  
+
         return [rowDiario || {
           fecha: new Date().toISOString(), // mantiene formato ISO completo
           total_creditos: 0,
@@ -503,14 +503,14 @@ const Credito = {
           egresos: 0,
         }];
       }
-  
+
       return data.rows;
-  
+
     } catch (error) {
       console.error("Error al obtener los datos del dashboard:", error);
       throw error;
     }
-  },   
+  },
 
   // Contar el total de créditos para la paginación
   countAll: async () => {
@@ -700,13 +700,13 @@ const Credito = {
 
     query += ` ORDER BY c."createdAt" DESC
       LIMIT $2 OFFSET $3`
-  
+
     const result = await db.query(query, queryParams);
     return result.rows;
   },
 
   //Contar los impagos por usuario
-  countImpagosByUsuario : async (usuarioId, search) => {
+  countImpagosByUsuario: async (usuarioId, search) => {
     const searchFilter = search === '' ? null : `%${search}%`;
 
     let query = `
@@ -721,7 +721,7 @@ const Credito = {
       query += ` AND cl.nombres ILIKE $2;`;
       queryParams.push(searchFilter);
     }
-  
+
     const result = await db.query(query, queryParams);
     return parseInt(result.rows[0].total);
   },
@@ -932,14 +932,14 @@ const Credito = {
       client.release();
     }
   },
-  
+
   generarCuotas: async (creditoId, monto, interes, plazo_dias, frecuencia_pago) => {
     const cuotas = [];
     const totalConInteres = monto + (monto * interes) / 100;
-  
+
     let cantidadCuotas = 0;
     let diasEntreCuotas = 1;
-  
+
     switch (frecuencia_pago) {
       case 'diario':
         diasEntreCuotas = 1;
@@ -960,21 +960,21 @@ const Credito = {
       default:
         throw new Error('Frecuencia de pago no válida');
     }
-  
+
     const cuotaMonto = parseFloat((totalConInteres / cantidadCuotas).toFixed(2));
     let fecha = new Date();
-  
+
     // Obtener días no laborables específicos
     const diasNoLaborablesQuery = `SELECT fecha FROM dias_no_laborables;`;
     const diasNoLaborablesResult = await db.query(diasNoLaborablesQuery);
     const diasNoLaborables = diasNoLaborablesResult.rows.map(row => row.fecha.toISOString().split('T')[0]);
-  
+
     // Obtener configuración desde el modelo Config
     const config = await Config.getConfigDiasNoLaborables() || { excluir_sabados: false, excluir_domingos: false };
-  
+
     for (let i = 0; i < cantidadCuotas; i++) {
       fecha.setDate(fecha.getDate() + diasEntreCuotas);
-  
+
       while (
         diasNoLaborables.includes(fecha.toISOString().split('T')[0]) ||
         (config.excluir_sabados && fecha.getDay() === 6) || // sábado = 6
@@ -982,7 +982,7 @@ const Credito = {
       ) {
         fecha.setDate(fecha.getDate() + 1);
       }
-  
+
       cuotas.push({
         creditoId,
         monto: cuotaMonto,
@@ -993,7 +993,7 @@ const Credito = {
         updatedAt: new Date(),
       });
     }
-  
+
     // Guardar en la tabla cuotas
     const insertPromises = cuotas.map(cuota => {
       const query = `
@@ -1011,10 +1011,8 @@ const Credito = {
       ];
       return db.query(query, values);
     });
-  
+
     await Promise.all(insertPromises);
     return cuotaMonto;
   }
-};
-
-module.exports = Credito;
+});

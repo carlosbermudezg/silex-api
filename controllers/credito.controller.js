@@ -1,8 +1,9 @@
 const catchError = require('../utils/catchError');
-const Credito = require('../models/credito');
+const CreditoModel = require('../models/credito');
 
 // Crear un nuevo crédito
 const createCredito = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const creditoData = req.body;
   const { primeraCuota } = req.body
 
@@ -15,7 +16,7 @@ const createCredito = catchError(async (req, res) => {
   }
 
   // Realizar el pago de la primera cuota
-  if(primeraCuota){
+  if (primeraCuota) {
     await Credito.createPago({
       creditoId: credito.credito.id,
       valor: credito.cuotaMonto,
@@ -32,17 +33,18 @@ const createCredito = catchError(async (req, res) => {
 
 //Obtenemos los creditos paginados segun la eleccion de usuario
 const getAllCreditos = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
   const searchTerm = req.query.searchTerm || '';
   const oficinaId = req.query.oficinaId || null;
   const rutaId = req.query.rutaId || null;
-  const userId = req.user.userId; 
+  const userId = req.user.userId;
 
   // Consultamos los créditos con los filtros
   const { creditos, totalCreditos } = await Credito.getAll(limit, offset, searchTerm, userId, oficinaId, rutaId);
-  
+
   const totalPages = Math.ceil(totalCreditos / limit);
 
   return res.status(200).json({
@@ -55,20 +57,22 @@ const getAllCreditos = catchError(async (req, res) => {
 });
 
 const getDataDash = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const id = req.query;
-  if(id === "null"){
+  if (id === "null") {
     return res.status(200).json([])
-  }else{
+  } else {
     const data = await Credito.getDataDash(id);
     return res.status(200).json(data);
   }
 });
 
 const getDataDashBars = catchError(async (req, res) => {
-  const {id, q} = req.query;
-  if(id === 'null'){
+  const Credito = CreditoModel(req.db);
+  const { id, q } = req.query;
+  if (id === 'null') {
     return res.status(200).json([])
-  }else{
+  } else {
     const data = await Credito.getDataDashBars(q, id);
     return res.status(200).json(data);
   }
@@ -76,6 +80,7 @@ const getDataDashBars = catchError(async (req, res) => {
 
 // Obtener un crédito por ID
 const getCreditoById = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const { id } = req.params;
   const credito = await Credito.getById(id);
   if (!credito) return res.status(404).json({ error: "Crédito no encontrado" });
@@ -83,6 +88,7 @@ const getCreditoById = catchError(async (req, res) => {
 });
 
 const getCreditosImpagos = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const usuarioId = req.user.userId;
   const search = req.query.search;
   const limit = parseInt(req.query.limit) || 10;
@@ -108,6 +114,7 @@ const getCreditosImpagos = catchError(async (req, res) => {
 });
 
 const createPago = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const { creditoId, valor, metodoPago, location } = req.body;
   const userId = req.user.userId;
 
@@ -115,7 +122,7 @@ const createPago = catchError(async (req, res) => {
     return res.status(400).json({ error: "Todos los campos son requeridos" });
   }
 
-  if(valor < 0 || isNaN(valor)){
+  if (valor < 0 || isNaN(valor)) {
     return res.status(400).json({ error: "Todos los campos son requeridos" });
   }
 
@@ -131,6 +138,7 @@ const createPago = catchError(async (req, res) => {
 
 // Actualizar un crédito
 const updateCredito = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const { id } = req.params;
   const credito = await Credito.update(id, req.body);
   if (!credito) return res.status(404).json({ error: "Crédito no encontrado" });
@@ -139,6 +147,7 @@ const updateCredito = catchError(async (req, res) => {
 
 // Eliminar un crédito
 const deleteCredito = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
   const { id } = req.params;
   const credito = await Credito.delete(id);
   if (!credito) return res.status(404).json({ error: "Crédito no encontrado" });

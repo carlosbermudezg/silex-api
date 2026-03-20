@@ -1,9 +1,10 @@
 // controllers/configController.js
-const Config = require('../models/config'); // Importar el modelo de configuración
+const ConfigModel = require('../models/config'); // Importar el modelo de configuración
 const catchError = require('../utils/catchError');  // Para manejo de errores
 
 // Función para obtener todas las categorías de egresos
 const getAllCategories = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   let { page = 1, limit = 10, searchTerm = '' } = req.query;
   page = parseInt(page);
   limit = parseInt(limit);
@@ -21,6 +22,7 @@ const getAllCategories = catchError(async (req, res) => {
 
 // Función para obtener todas las categorías de ingresos
 const getAllCategoriesIn = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   let { page = 1, limit = 10, searchTerm = '' } = req.query;
   page = parseInt(page);
   limit = parseInt(limit);
@@ -38,18 +40,21 @@ const getAllCategoriesIn = catchError(async (req, res) => {
 
 // Función para obtener la configuracion de las cajas
 const getConfigCaja = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const config = await Config.getConfigCaja();
   return res.status(200).json(config);
 });
 
 // Función para obtener la configuracion por defecto
 const getConfigDefault = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const config = await Config.getConfigDefault();
   return res.status(200).json(config);
 });
 
 // Función para editar la configuracion de las cajas
 const updateConfigCaja = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const timeClose = req.body.hora_cierre_caja
   const timeOpen = req.body.hora_apertura_caja
   const timeGasto = req.body.hora_gastos
@@ -58,6 +63,7 @@ const updateConfigCaja = catchError(async (req, res) => {
 });
 
 const updateDiasNoLaborablesConfig = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { excluir_sabados, excluir_domingos } = req.body;
 
   if (typeof excluir_sabados === 'undefined' && typeof excluir_domingos === 'undefined') {
@@ -73,6 +79,7 @@ const updateDiasNoLaborablesConfig = catchError(async (req, res) => {
 });
 
 const getDiasNoLaborablesConfig = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const config = await Config.getConfigDiasNoLaborables();
 
   if (!config) {
@@ -84,6 +91,7 @@ const getDiasNoLaborablesConfig = catchError(async (req, res) => {
 
 // Función para obtener una categoría de egreso por su ID
 const getCategoryById = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { id } = req.params;
   const categoria = await Config.getCategoryById(id);
 
@@ -96,6 +104,7 @@ const getCategoryById = catchError(async (req, res) => {
 
 // Función para crear una nueva categoría de egreso
 const createCategory = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { nombre } = req.body;
 
   if (!nombre) {
@@ -108,6 +117,7 @@ const createCategory = catchError(async (req, res) => {
 
 // Función para crear una nueva categoría de egreso
 const createCategoryIn = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { nombre } = req.body;
 
   if (!nombre) {
@@ -120,6 +130,7 @@ const createCategoryIn = catchError(async (req, res) => {
 
 // Función para actualizar una categoría de egreso
 const updateCategory = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { id } = req.params;
   const { nombre, archivada } = req.body;
 
@@ -138,6 +149,7 @@ const updateCategory = catchError(async (req, res) => {
 
 // Función para actualizar una categoría de egreso
 const updateCategoryIn = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { id } = req.params;
   const { nombre, archivada } = req.body;
 
@@ -156,6 +168,7 @@ const updateCategoryIn = catchError(async (req, res) => {
 
 // Función para archivar una categoría de egreso
 const archiveCategory = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { id } = req.params;
   const { status } = req.body;
 
@@ -170,6 +183,7 @@ const archiveCategory = catchError(async (req, res) => {
 
 // Función para archivar una categoría de egreso
 const archiveCategoryIn = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { id } = req.params;
   const { status } = req.body;
 
@@ -184,6 +198,7 @@ const archiveCategoryIn = catchError(async (req, res) => {
 
 // Función para eliminar una categoría de egreso
 const deleteCategory = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { id } = req.params;
 
   try {
@@ -201,6 +216,7 @@ const deleteCategory = catchError(async (req, res) => {
 
 //Función para obtener la configuración de crédito por ruta
 const getConfigByRutaId = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { rutaId } = req.params;
   const config = await Config.getByRutaId(rutaId);
   if (!config) return res.status(404).json({ message: 'Configuración no encontrada para esta ruta' });
@@ -209,6 +225,7 @@ const getConfigByRutaId = catchError(async (req, res) => {
 
 // Función para obtener la configuración de crédito por ruta con paginación
 const getallRutasConfig = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const search = req.query.search;
@@ -228,6 +245,7 @@ const getallRutasConfig = catchError(async (req, res) => {
 
 // Función del controlador para actualizar la configuración de la ruta
 const updateRutaConfig = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { rutaId } = req.params; // Ruta ID que se pasa en la URL
   const configData = req.body; // Datos que se pasan en el cuerpo de la solicitud
 
@@ -243,6 +261,7 @@ const updateRutaConfig = catchError(async (req, res) => {
 
 // Función del controlador para actualizar la configuración por defecto
 const updateConfigDefault = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const configData = req.body; // Datos que se pasan en el cuerpo de la solicitud
 
   // Llamar al modelo para actualizar la configuración de la ruta
@@ -257,6 +276,7 @@ const updateConfigDefault = catchError(async (req, res) => {
 
 //Ingresar un dia no Laborable
 const crearDiaNoLaborable = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { fecha, descripcion } = req.body;
 
   if (!fecha || !descripcion) {
@@ -265,9 +285,10 @@ const crearDiaNoLaborable = catchError(async (req, res) => {
 
   const result = await Config.createNoLaborable(fecha, descripcion);
   return res.status(201).json(result);
-}); 
+});
 
 const getDiasNoLaborables = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -283,6 +304,7 @@ const getDiasNoLaborables = catchError(async (req, res) => {
 });
 
 const eliminarDiaNoLaborable = catchError(async (req, res) => {
+  const Config = ConfigModel(req.db);
   const { id } = req.params;
 
   if (!id) {

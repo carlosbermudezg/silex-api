@@ -1,7 +1,6 @@
-const db = require('../config/db'); // Conexión a la base de datos
 const bcrypt = require('bcrypt'); // Para comparar la contraseña
 
-const Usuario = {
+module.exports = (db) => ({
   // Crear un nuevo usuario
   create: async (usuarioData) => {
     const { nombre, correo, contrasena, tipo, permisoId, securityCode, estado } = usuarioData;
@@ -126,7 +125,7 @@ const Usuario = {
 
   //Buscar usuarios por datos
   searchByData: async (searchTerm, page, limit, offset) => {
-  
+
     const queryText = `
       SELECT * FROM usuarios
       WHERE (LOWER(nombre) ILIKE LOWER($1) OR LOWER(correo) ILIKE LOWER($1) OR LOWER(estado) ILIKE LOWER($1))
@@ -134,16 +133,16 @@ const Usuario = {
       LIMIT $2 OFFSET $3;
     `;
     const result = await db.query(queryText, [`%${searchTerm}%`, limit, offset]);
-  
+
     const countQuery = `
       SELECT COUNT(*) FROM usuarios
       WHERE (LOWER(nombre) ILIKE LOWER($1) OR LOWER(correo) ILIKE LOWER($1) OR LOWER(estado) ILIKE LOWER($1));
     `;
     const countResult = await db.query(countQuery, [`%${searchTerm}%`]);
-  
+
     const total = Number(countResult.rows[0].count);
     const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
-  
+
     return {
       data: result.rows,
       total,
@@ -206,11 +205,11 @@ const Usuario = {
         LEFT JOIN ruta r ON u.id = r."userId"
         WHERE u.correo = $1
       `;
-      
+
       const res = await db.query(query, [email]);
-      
+
       if (res.rows.length === 0) return null;
-  
+
       // Agrupar las rutas si hay más de una
       const usuario = {
         user: res.rows[0],
@@ -221,19 +220,17 @@ const Usuario = {
             nombre_ruta: row.ruta_nombre
           }))
       };
-  
+
       return usuario;
-  
+
     } catch (error) {
       throw error;
     }
   },
-  
+
   // Verificar que la contraseña es válida (comparando el hash)
   validatePassword: async (password, hashedPassword) => {
     return bcrypt.compare(password, hashedPassword); // Retorna true o false
   },
-  
-};
 
-module.exports = Usuario;
+});

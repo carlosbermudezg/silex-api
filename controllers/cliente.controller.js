@@ -1,10 +1,11 @@
-const Cliente = require('../models/cliente');
+const ClienteModel = require('../models/cliente');
 const catchError = require('../utils/catchError');  // Asegúrate de tener esta función catchError
 const db = require('../config/db'); // Importa la conexión a la base de datos
 const verificarCI = require('../utils/identificarCI');
 
 // Controlador para crear un cliente
 const createCliente = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   const { identificacion, nombres, telefono, direccion, rutaId } = req.body;
 
   // Validaciones específicas por campo
@@ -47,6 +48,7 @@ const createCliente = catchError(async (req, res) => {
 
 // Controlador para obtener todos los clientes con paginación
 const getAllClientes = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   try {
     const limit = parseInt(req.query.limit) || 10; // Número máximo de clientes por página
     const page = parseInt(req.query.page) || 1;   // Página solicitada, por defecto la página 1
@@ -71,32 +73,35 @@ const getAllClientes = catchError(async (req, res) => {
 
 // Controlador para obtener un cliente por ID
 const getClienteById = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   try {
     const cliente = await Cliente.getById(req.params.id);
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente no encontrado' });
     }
     return res.status(200).json(cliente);
-  } catch(err){
-    return res.status(500).json({ error : err.detail ? err.detail : "Ocurrio un error" });
+  } catch (err) {
+    return res.status(500).json({ error: err.detail ? err.detail : "Ocurrio un error" });
   }
 });
 
 // Controlador para archivar un cliente
 const archiveCliente = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   try {
     const cliente = await Cliente.archive(req.params.id);
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente no encontrado' });
     }
     return res.status(200).json(cliente);
-  } catch(err){
-    return res.status(500).json({ error : err.detail ? err.detail : "Ocurrio un error" });
+  } catch (err) {
+    return res.status(500).json({ error: err.detail ? err.detail : "Ocurrio un error" });
   }
 });
 
 // Controlador para obtener clientes por ruta con paginación
 const getClientesByRuta = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   const { rutaId } = req.params;
   const { page, limit, search } = req.query;  // Parámetros de consulta: page y pageSize
   const offset = (page - 1) * limit;  // Calcular el desplazamiento
@@ -108,6 +113,7 @@ const getClientesByRuta = catchError(async (req, res) => {
 
 // Controlador para obtener clientes por ruta sin paginación
 const getClientesByRuta2 = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   const { rutaId } = req.params;
 
   const clientes = await Cliente.getByRutaId2(rutaId);  // Llamamos al método de paginación por ruta
@@ -117,6 +123,7 @@ const getClientesByRuta2 = catchError(async (req, res) => {
 
 // Controlador para obtener clientes por oficina con paginación
 const getClientesByOficina = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   const { oficinaId } = req.params;
   const { page, limit } = req.query;  // Parámetros de consulta: page y pageSize
   const offset = (page - 1) * limit;  // Calcular el desplazamiento
@@ -128,6 +135,7 @@ const getClientesByOficina = catchError(async (req, res) => {
 
 // Controlador para buscar clientes por datos con paginación
 const searchClientes = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   const { query } = req.query; // Parámetro de búsqueda (nombre, teléfono, identificación, etc.)
   const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * parseInt(limit);
@@ -142,6 +150,7 @@ const searchClientes = catchError(async (req, res) => {
 
 // Controlador para obtener clientes archivados con paginación
 const getArchivedClientes = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * parseInt(limit);
 
@@ -151,16 +160,17 @@ const getArchivedClientes = catchError(async (req, res) => {
 
 // Controlador para editar clientes por id
 const updateCliente = catchError(async (req, res) => {
+  const Cliente = ClienteModel(req.db);
   const { id } = req.params;
   const updatedData = req.body;
-  try{
+  try {
     const cliente = await Cliente.update(id, updatedData);
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente no encontrado' });
     }
     return res.status(200).json(cliente);
-  } catch(err){
-    return res.status(500).json({ error : err.detail ? err.detail : "Ocurrio un error" });
+  } catch (err) {
+    return res.status(500).json({ error: err.detail ? err.detail : "Ocurrio un error" });
   }
 });
 

@@ -1,10 +1,10 @@
 const pool = require('../config/db');
 
-const Recorrido = {
-    //Obtener los pagos del recorrido
-    getPagosByRutaAndFecha: async (rutaId, fecha) => {
-      try {
-        const res = await pool.query(`
+module.exports = (db) => ({
+  //Obtener los pagos del recorrido
+  getPagosByRutaAndFecha: async (rutaId, fecha) => {
+    try {
+      const res = await pool.query(`
           SELECT 
             p.*, 
             c.nombres AS cliente_nombre, 
@@ -16,12 +16,10 @@ const Recorrido = {
           WHERE c."rutaId" = $1 AND DATE(p."createdAt") = $2
           ORDER BY p."createdAt" ASC
         `, [rutaId, fecha]);
-    
-        return res.rows;
-      } catch (error) {
-        throw error;
-      }
-    }        
-};
 
-module.exports = Recorrido;
+      return res.rows;
+    } catch (error) {
+      throw error;
+    }
+  }
+});
