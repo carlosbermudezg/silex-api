@@ -1,7 +1,7 @@
 const db = require('../config/db');
 
 module.exports = (db) => ({
-  // Crear un producto con rutas asignadas
+  // Crear un producto
   create: async (productoData) => {
     // Crear el producto primero
     const queryText = `
@@ -13,7 +13,7 @@ module.exports = (db) => ({
     const productoId = result.rows[0].id;
 
     // Devolver el producto
-    return Producto.getById(productoId);
+    return result.rows[0];
   },
 
   // Obtener todos los productos con las rutas asignadas

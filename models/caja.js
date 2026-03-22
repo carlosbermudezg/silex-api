@@ -1,5 +1,4 @@
 // models/caja.js
-const pool = require('../config/db'); // Importar la conexión a la base de datos
 const Ruta = require('./ruta'); // Importar el modelo de Caja
 const Cliente = require('./cliente');
 
@@ -8,7 +7,7 @@ module.exports = (db) => ({
   // Obtener todas las cajas
   getAll: async () => {
     try {
-      const res = await pool.query('SELECT * FROM cajas');
+      const res = await db.query('SELECT * FROM cajas');
       return res.rows;
     } catch (error) {
       throw error;
@@ -18,7 +17,7 @@ module.exports = (db) => ({
   // Obtener una caja por su ID
   getById: async (id) => {
     try {
-      const res = await pool.query('SELECT * FROM cajas WHERE id = $1', [id]);
+      const res = await db.query('SELECT * FROM cajas WHERE id = $1', [id]);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -28,7 +27,7 @@ module.exports = (db) => ({
   // Obtener turno por su id de caja
   getTurnoById: async (id) => {
     try {
-      const res = await pool.query('SELECT * FROM turnos WHERE caja_id = $1 AND fecha_cierre IS NULL', [id]);
+      const res = await db.query('SELECT * FROM turnos WHERE caja_id = $1 AND fecha_cierre IS NULL', [id]);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -71,8 +70,8 @@ module.exports = (db) => ({
       `;
 
       const [turnosRes, totalRes] = await Promise.all([
-        pool.query(queryTurnos, [limit, offset, searchFilter]),
-        pool.query(queryTotal, [searchFilter])
+        db.query(queryTurnos, [limit, offset, searchFilter]),
+        db.query(queryTotal, [searchFilter])
       ]);
 
       const totalItems = parseInt(totalRes.rows[0].count, 10);
@@ -99,7 +98,7 @@ module.exports = (db) => ({
       if (!ruta) {
         throw new Error('No tienes una ruta asignada');
       }
-      const res = await pool.query('SELECT * FROM cajas WHERE "rutaId" = $1', [ruta[0].id]);
+      const res = await db.query('SELECT * FROM cajas WHERE "rutaId" = $1', [ruta[0].id]);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -109,7 +108,7 @@ module.exports = (db) => ({
   // Obtener una caja por su ID de ruta
   getByRutaId: async (id) => {
     try {
-      const res = await pool.query(`
+      const res = await db.query(`
         SELECT 
           cajas.*, 
           ruta.nombre AS ruta_nombre -- Ajusta los campos según lo que necesites de la tabla ruta
@@ -129,7 +128,7 @@ module.exports = (db) => ({
     try {
       const query = 'INSERT INTO cajas ("saldoActual", "rutaId", "createdAt", "updatedAt", estado) VALUES ($1, $2, NOW(), NOW(), $3) RETURNING *';
       const values = [saldoActual, rutaId, 'cerrada'];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -141,7 +140,7 @@ module.exports = (db) => ({
     try {
       const query = 'UPDATE cajas SET saldo_actual = $1 WHERE id = $2 RETURNING *';
       const values = [saldoActual, id];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -153,7 +152,7 @@ module.exports = (db) => ({
     try {
       const query = 'DELETE FROM cajas WHERE id = $1';
       const values = [id];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rowCount;  // Retorna la cantidad de filas eliminadas
     } catch (error) {
       throw error;
@@ -162,9 +161,8 @@ module.exports = (db) => ({
 
   // Agregar saldo a la caja de un usuario, verificando el permiso del administrador
   agregarSaldo: async (adminId, rutaId, monto) => {
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // 1️⃣ Verificar que el administrador tiene el permiso para asignar saldo
       const permisoAdminQuery = `
@@ -173,14 +171,14 @@ module.exports = (db) => ({
       JOIN usuarios u ON u."permisoId" = p.id
       WHERE u.id = $1 AND 'asign' = ANY(p.descripcion);
       `;
-      const permisoAdminResult = await client.query(permisoAdminQuery, [adminId]);
+      const permisoAdminResult = await db.query(permisoAdminQuery, [adminId]);
 
       if (permisoAdminResult.rows.length === 0) {
         throw new Error('El usuario no tiene permiso para asignar saldo.');
       }
 
       // 2️⃣ Verificar que la caja de la ruta existe
-      const cajaRes = await client.query(
+      const cajaRes = await db.query(
         'SELECT id, "saldoActual" FROM cajas WHERE "rutaId" = $1',
         [rutaId]
       );
@@ -193,33 +191,30 @@ module.exports = (db) => ({
       const nuevoSaldo = parseFloat(caja.saldoActual) + parseFloat(monto);
 
       // 3️⃣ Actualizar el saldo de la caja del usuario
-      await client.query(
+      await db.query(
         'UPDATE cajas SET "saldoActual" = $1, "updatedAt" = NOW() WHERE id = $2 RETURNING *',
         [nuevoSaldo, caja.id]
       );
 
       // 4️⃣ Registrar el movimiento en la caja del usuario
-      await client.query(
+      await db.query(
         `INSERT INTO movimientos_caja ("cajaId", tipo, monto, descripcion, saldo_anterior, saldo, "usuarioId", category, "createdAt", "updatedAt")
         VALUES ($1, 'ingreso', $2, 'Asignación de saldo', $3, $4, $5, $6, NOW(), NOW())`,
         [caja.id, monto, caja.saldoActual, nuevoSaldo, adminId, "ingreso"]
       );
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return { message: 'Saldo agregado correctamente', nuevoSaldoUsuario: nuevoSaldo };
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   cerrarCaja: async (cajaId, userId) => {
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
       let montoFinal = 0
-      const turnoActual = await client.query(
+      const turnoActual = await db.query(
         `SELECT *
           FROM turnos
           WHERE "caja_id" = $1 AND fecha_cierre IS NULL
@@ -229,7 +224,7 @@ module.exports = (db) => ({
         [cajaId]
       );
 
-      const caja = await client.query(
+      const caja = await db.query(
         `SELECT *
           FROM cajas
           WHERE id = $1
@@ -241,67 +236,61 @@ module.exports = (db) => ({
       montoFinal = montoFinal + caja?.rows[0]?.saldoActual
 
       // 1️⃣ Cerrar caja de la ruta
-      await client.query(
+      await db.query(
         `UPDATE cajas SET estado = 'cerrada', "updatedAt" = NOW() WHERE id = $1`,
         [cajaId]
       );
       //Cerrar el turno
-      await client.query(
+      await db.query(
         `UPDATE turnos SET fecha_cierre = NOW(), monto_final = $1, observaciones_cierre = $2, usuario_close = $3 WHERE id = $4`,
         [montoFinal, 'observacion de cierre', userId, turnoActual.rows[0].id]
       );
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
 
       return {
         message: 'Caja cerrada correctamente'
       };
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   bloquearCaja: async (cajaId, estado) => {
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // 1️⃣ Bloquear caja de la ruta
-      await client.query(
+      await db.query(
         `UPDATE cajas SET estado = $2, "updatedAt" = NOW() WHERE id = $1`,
         [cajaId, estado]
       );
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
 
       return {
         message: 'Caja bloqueada correctamente'
       };
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   abrirCaja: async (cajaId, userId, sistema = false) => {
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // Validar que NO haya un turno abierto
-      const turnoAbierto = await client.query(`
+      const turnoAbierto = await db.query(`
         SELECT id FROM turnos
         WHERE "caja_id" = $1 AND fecha_cierre IS NULL
         LIMIT 1
       `, [cajaId]);
 
       if (turnoAbierto.rowCount > 0) {
-        await client.query('ROLLBACK');
+        await db.query('ROLLBACK');
         return {
           success: false,
           message: 'La caja ya tiene un turno abierto.'
@@ -309,7 +298,7 @@ module.exports = (db) => ({
       }
 
       // Obtener último turno cerrado (si existe)
-      const ultimoTurno = await client.query(`
+      const ultimoTurno = await db.query(`
         SELECT monto_final FROM turnos
         WHERE "caja_id" = $1 AND fecha_cierre IS NOT NULL
         ORDER BY fecha_cierre DESC
@@ -319,13 +308,13 @@ module.exports = (db) => ({
       const montoInicial = ultimoTurno.rows[0]?.monto_final || 0;
 
       // Cambiar estado de la caja a 'abierta'
-      await client.query(`
+      await db.query(`
         UPDATE cajas SET estado = 'abierta', "updatedAt" = NOW()
         WHERE id = $1
       `, [cajaId]);
 
       // Insertar nuevo turno
-      await client.query(`
+      await db.query(`
         INSERT INTO turnos (
           "caja_id", "usuario_open", "fecha_apertura", "monto_inicial", "observaciones_apertura", "sistema"
         )
@@ -338,17 +327,15 @@ module.exports = (db) => ({
         sistema
       ]);
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return {
         success: true,
         message: 'Caja abierta correctamente'
       };
 
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
@@ -361,13 +348,13 @@ module.exports = (db) => ({
     `;
 
     const values = [turnoId, limit, offset];
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
 
     const countQuery = `
       SELECT COUNT(*) FROM movimientos_caja
       WHERE "turnoId" = $1
     `;
-    const countResult = await pool.query(countQuery, [turnoId]);
+    const countResult = await db.query(countQuery, [turnoId]);
     const total = Number(countResult.rows[0].count);
     const totalPages = Math.ceil(total / limit);
 
@@ -383,9 +370,8 @@ module.exports = (db) => ({
     const estado = (userRole === 'administrador' || userRole === 'administrador_oficina') ? 'aprobado' : 'pendiente';
     const aprovedId = (userRole === 'administrador' || userRole === 'administrador_oficina') ? userId : 0
 
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       const ruta = await Ruta.getByUserId(userId);
 
@@ -395,7 +381,7 @@ module.exports = (db) => ({
 
       // 🔍 Validar hora máxima si es cobrador
       if (userRole === 'cobrador') {
-        const configResult = await client.query(
+        const configResult = await db.query(
           'SELECT hora_gastos FROM config_caja WHERE id=1 LIMIT 1'
         );
 
@@ -418,7 +404,7 @@ module.exports = (db) => ({
       }
 
       // 🟡 Obtener la caja del usuario
-      const cajaResult = await client.query(
+      const cajaResult = await db.query(
         'SELECT id, "saldoActual", estado FROM cajas WHERE "rutaId"=$1 LIMIT 1',
         [ruta[0].id]
       );
@@ -455,7 +441,7 @@ module.exports = (db) => ({
         RETURNING *;
       `;
       const egresoValues = [monto, descripcion, estado, cajaId, gastoCategoryId, userId, aprovedId, foto, turno.id];
-      const egresoResult = await client.query(insertEgresoQuery, egresoValues);
+      const egresoResult = await db.query(insertEgresoQuery, egresoValues);
       const egreso = egresoResult.rows[0];
 
       // ✅ Registrar movimiento si aprobado
@@ -483,7 +469,7 @@ module.exports = (db) => ({
           turno.id
         ];
 
-        await client.query(insertMovimientoCajaQuery, movimientoValues);
+        await db.query(insertMovimientoCajaQuery, movimientoValues);
 
         // 📉 Actualizar saldo
         const updateSaldoQuery = `
@@ -492,28 +478,25 @@ module.exports = (db) => ({
               "updatedAt" = NOW()
           WHERE id = $2;
         `;
-        await client.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
+        await db.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
       }
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return egreso;
 
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   createEgresoAdm: async ({ monto, descripcion, cajaId, aprovedId, gastoCategoryId, turnoId }) => {
 
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // 🟡 Obtener la caja
-      const cajaResult = await client.query(
+      const cajaResult = await db.query(
         'SELECT id, "saldoActual", estado FROM cajas WHERE id = $1 LIMIT 1',
         [cajaId]
       );
@@ -543,7 +526,7 @@ module.exports = (db) => ({
         RETURNING *;
       `;
       const egresoValues = [monto, descripcion, 'aprobado', cajaId, gastoCategoryId, aprovedId, aprovedId, turnoId];
-      const egresoResult = await client.query(insertEgresoQuery, egresoValues);
+      const egresoResult = await db.query(insertEgresoQuery, egresoValues);
       const egreso = egresoResult.rows[0];
 
       // ✅ Registrar movimiento
@@ -571,7 +554,7 @@ module.exports = (db) => ({
         turnoId
       ];
 
-      await client.query(insertMovimientoCajaQuery, movimientoValues);
+      await db.query(insertMovimientoCajaQuery, movimientoValues);
 
       // 📉 Actualizar saldo
       const updateSaldoQuery = `
@@ -580,27 +563,24 @@ module.exports = (db) => ({
             "updatedAt" = NOW()
         WHERE id = $2;
       `;
-      await client.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
+      await db.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return egreso;
 
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   createIngresoAdm: async ({ monto, descripcion, cajaId, aprovedId, ingresoCategoryId, turnoId }) => {
 
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // 🟡 Obtener la caja
-      const cajaResult = await client.query(
+      const cajaResult = await db.query(
         'SELECT id, "saldoActual", estado FROM cajas WHERE id = $1 LIMIT 1',
         [cajaId]
       );
@@ -625,7 +605,7 @@ module.exports = (db) => ({
         RETURNING *;
       `;
       const ingresoValues = [monto, descripcion, 'aprobado', cajaId, ingresoCategoryId, aprovedId, aprovedId, turnoId];
-      const ingresoResult = await client.query(insertIngresoQuery, ingresoValues);
+      const ingresoResult = await db.query(insertIngresoQuery, ingresoValues);
       const ingreso = ingresoResult.rows[0];
 
       // ✅ Registrar movimiento
@@ -653,7 +633,7 @@ module.exports = (db) => ({
         turnoId
       ];
 
-      await client.query(insertMovimientoCajaQuery, movimientoValues);
+      await db.query(insertMovimientoCajaQuery, movimientoValues);
 
       // 📉 Actualizar saldo
       const updateSaldoQuery = `
@@ -662,23 +642,20 @@ module.exports = (db) => ({
             "updatedAt" = NOW()
         WHERE id = $2;
       `;
-      await client.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
+      await db.query(updateSaldoQuery, [nuevoSaldo, cajaId]);
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return ingreso;
 
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   aprobarEgreso: async (egresoId, userId) => {
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // Actualizar estado del egreso y registrar el usuario que aprobó
       const updateQuery = `
@@ -687,11 +664,11 @@ module.exports = (db) => ({
         WHERE id = $2
         RETURNING *;
       `;
-      const result = await client.query(updateQuery, [userId, egresoId]);
+      const result = await db.query(updateQuery, [userId, egresoId]);
       const egreso = result.rows[0];
 
       // 🟡 Obtener la caja
-      const cajaResult = await client.query(
+      const cajaResult = await db.query(
         'SELECT id, "saldoActual", estado FROM cajas WHERE id = $1 LIMIT 1',
         [egreso.cajaId]
       );
@@ -736,7 +713,7 @@ module.exports = (db) => ({
         egreso.turno_id
       ];
 
-      await client.query(insertMovimientoCajaQuery, movimientoValues);
+      await db.query(insertMovimientoCajaQuery, movimientoValues);
 
       // 📉 Actualizar saldo
       const updateSaldoQuery = `
@@ -745,26 +722,23 @@ module.exports = (db) => ({
             "updatedAt" = NOW()
         WHERE id = $2;
       `;
-      await client.query(updateSaldoQuery, [nuevoSaldo, egreso.cajaId]);
+      await db.query(updateSaldoQuery, [nuevoSaldo, egreso.cajaId]);
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return egreso;
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   rechazarEgreso: async (egresoId, adminId) => {
-    const client = await pool.connect();
 
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // Verificamos que el egreso exista
-      const { rows } = await client.query(`SELECT * FROM egresos WHERE id = $1`, [egresoId]);
+      const { rows } = await db.query(`SELECT * FROM egresos WHERE id = $1`, [egresoId]);
       if (rows.length === 0) throw new Error('Egreso no encontrado');
       const egreso = rows[0];
 
@@ -777,18 +751,16 @@ module.exports = (db) => ({
       }
 
       // Actualizamos el estado a rechazado
-      await client.query(`
+      await db.query(`
         UPDATE egresos SET estado = 'rechazado', "user_rejected_id" = $2, "updatedAt" = NOW() WHERE id = $1
       `, [egresoId, adminId]);
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return { egresoId, estado: 'rechazado' };
 
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 
@@ -859,14 +831,14 @@ module.exports = (db) => ({
 
     values.push(limit, offset);
 
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
 
     // Total count para frontend
     const countQuery = `
       SELECT COUNT(*) FROM egresos e
       WHERE ${conditions.join(' AND ')};
     `;
-    const countResult = await pool.query(countQuery, values.slice(0, values.length - 2));
+    const countResult = await db.query(countQuery, values.slice(0, values.length - 2));
     const total = parseInt(countResult.rows[0].count);
 
     return {
@@ -881,9 +853,8 @@ module.exports = (db) => ({
   },
 
   getEgresosByTurno: async (turnoId, limit, offset) => {
-    console.log(turnoId)
     try {
-      const res = await pool.query(`
+      const res = await db.query(`
         SELECT 
           e.*, 
           cec.nombre AS categoria_nombre,
@@ -904,7 +875,7 @@ module.exports = (db) => ({
         SELECT COUNT(*) FROM egresos
         WHERE turno_id = $1
       `;
-      const countResult = await pool.query(countQuery, [turnoId]);
+      const countResult = await db.query(countQuery, [turnoId]);
       const total = Number(countResult.rows[0].count);
       const totalPages = Math.ceil(total / limit);
 
@@ -957,7 +928,7 @@ module.exports = (db) => ({
 
   getAbonosByTurno: async (turnoId, limit, offset) => {
     try {
-      const result = await pool.query(`
+      const result = await db.query(`
         SELECT 
           p.*, 
           c.nombres AS nombre
@@ -972,7 +943,7 @@ module.exports = (db) => ({
       SELECT COUNT(*) FROM pagos
       WHERE turno_id = $1 AND tipo = 'abono'
     `;
-      const countResult = await pool.query(countQuery, [turnoId]);
+      const countResult = await db.query(countQuery, [turnoId]);
       const total = Number(countResult.rows[0].count);
       const totalPages = Math.ceil(total / limit);
 
@@ -989,7 +960,7 @@ module.exports = (db) => ({
 
   getValidAbonosByTurno: async (turnoId, limit, offset) => {
     try {
-      const result = await pool.query(`
+      const result = await db.query(`
         SELECT 
           p.*, 
           c.nombres AS nombre
@@ -1004,7 +975,7 @@ module.exports = (db) => ({
       SELECT COUNT(*) FROM pagos
       WHERE turno_id = $1 AND tipo = 'abono' AND estado = 'aprobado'
     `;
-      const countResult = await pool.query(countQuery, [turnoId]);
+      const countResult = await db.query(countQuery, [turnoId]);
       const total = Number(countResult.rows[0].count);
       const totalPages = Math.ceil(total / limit);
 
@@ -1020,13 +991,12 @@ module.exports = (db) => ({
   },
 
   anularPago: async (pagoId, userId, motivo) => {
-    const client = await pool.connect();
 
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // 1. Obtener desglose del pago
-      const pagoRes = await client.query(`
+      const pagoRes = await db.query(`
         SELECT p.monto, p.turno_id, p."user_created_id", p."cliente_id", c."creditoId",
               pc."cuotaId", pc.monto_abonado
         FROM pagos p
@@ -1036,7 +1006,7 @@ module.exports = (db) => ({
       `, [pagoId]);
 
       if (pagoRes.rowCount === 0) {
-        await client.query('ROLLBACK');
+        await db.query('ROLLBACK');
         return { error: 'Pago no encontrado o no asociado a cuotas' };
       }
 
@@ -1060,7 +1030,7 @@ module.exports = (db) => ({
 
       // 2. Revertir montos en cuotas
       for (const [cuotaId, montoAbonado] of cuotasMap.entries()) {
-        await client.query(`
+        await db.query(`
           UPDATE cuotas
           SET 
             monto_pagado = monto_pagado - $1,
@@ -1071,14 +1041,14 @@ module.exports = (db) => ({
       }
 
       // 3. Actualizar crédito (solo saldo)
-      const creditoRes = await client.query(`
+      const creditoRes = await db.query(`
         SELECT saldo
         FROM creditos
         WHERE id = $1
       `, [creditoId]);
 
       if (creditoRes.rowCount === 0) {
-        await client.query('ROLLBACK');
+        await db.query('ROLLBACK');
         return { error: 'Crédito no encontrado' };
       }
 
@@ -1087,7 +1057,7 @@ module.exports = (db) => ({
 
       const estadoCredito = nuevoSaldoCredito > 0 ? 'impago' : 'pagado';
 
-      await client.query(`
+      await db.query(`
         UPDATE creditos
         SET saldo = $1,
             estado = $2,
@@ -1100,7 +1070,7 @@ module.exports = (db) => ({
       ]);
 
       // 4. Actualizar saldo en caja
-      const cajaRes = await client.query(`
+      const cajaRes = await db.query(`
         SELECT c.id, c."saldoActual"
         FROM cajas c
         JOIN ruta r ON r.id = c."rutaId"
@@ -1109,7 +1079,7 @@ module.exports = (db) => ({
       `, [pagoRes.rows[0].user_created_id]);
 
       if (cajaRes.rowCount === 0) {
-        await client.query('ROLLBACK');
+        await db.query('ROLLBACK');
         return { error: 'Caja no encontrada' };
       }
 
@@ -1117,7 +1087,7 @@ module.exports = (db) => ({
       const saldoAnterior = parseFloat(cajaRes.rows[0].saldoActual);
       const nuevoSaldoCaja = saldoAnterior - montoPago;
 
-      await client.query(`
+      await db.query(`
         UPDATE cajas
         SET "saldoActual" = $1,
             "updatedAt" = NOW()
@@ -1125,14 +1095,14 @@ module.exports = (db) => ({
       `, [nuevoSaldoCaja, cajaId]);
 
       // 5. Eliminar pagos_cuotas
-      await client.query(`
+      await db.query(`
         DELETE FROM pagos_cuotas
         WHERE "pagoId" = $1
       `, [pagoId]);
 
       // 6. Registrar movimiento de anulación
       const cliente = await Cliente.getNameById(clienteId);
-      await client.query(`
+      await db.query(`
         INSERT INTO movimientos_caja (
           "cajaId", descripcion, saldo, saldo_anterior, "createdAt", "updatedAt",
           monto, tipo, "usuarioId", category, "clienteId", "creditoId", "turnoId"
@@ -1153,7 +1123,7 @@ module.exports = (db) => ({
       ]);
 
       // 7. Marcar pago como anulado
-      await client.query(`
+      await db.query(`
         UPDATE pagos
         SET estado = 'anulado',
             user_null_id = $2,
@@ -1162,15 +1132,13 @@ module.exports = (db) => ({
         WHERE id = $1
       `, [pagoId, userId, motivo]);
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return { success: true, message: 'Pago anulado correctamente' };
 
     } catch (err) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       console.error(err);
       return { error: 'Error al anular el pago' };
-    } finally {
-      client.release();
     }
   },
 
@@ -1179,13 +1147,13 @@ module.exports = (db) => ({
     let cajaUserIds = [];
 
     if (!oficinaId && !rutaId && userId) {
-      const oficinasRes = await pool.query(`
+      const oficinasRes = await db.query(`
         SELECT "oficinaId" FROM usuariooficinas WHERE "usuarioId" = ${userId}
       `);
       const oficinaIds = oficinasRes.rows.map(row => row.oficinaId);
 
       if (oficinaIds.length > 0) {
-        const rutasRes = await pool.query(`
+        const rutasRes = await db.query(`
           SELECT "userId" FROM ruta WHERE "oficinaId" IN (${oficinaIds.join(',')})
         `);
         cajaUserIds = rutasRes.rows.map(row => row.userId);
@@ -1193,14 +1161,14 @@ module.exports = (db) => ({
     }
 
     if (oficinaId) {
-      const rutasRes = await pool.query(`
+      const rutasRes = await db.query(`
         SELECT "userId" FROM ruta WHERE "oficinaId" = ${oficinaId}
       `);
       cajaUserIds = rutasRes.rows.map(row => row.userId);
     }
 
     if (rutaId) {
-      const rutaRes = await pool.query(`
+      const rutaRes = await db.query(`
         SELECT "userId" FROM ruta WHERE id = ${rutaId}
       `);
       if (rutaRes.rows.length > 0) {
@@ -1237,8 +1205,8 @@ module.exports = (db) => ({
     `;
 
     const [egresosRes, countRes] = await Promise.all([
-      pool.query(queryText),
-      pool.query(countQuery),
+      db.query(queryText),
+      db.query(countQuery),
     ]);
 
     const total = parseInt(countRes.rows[0].count, 10);
@@ -1264,9 +1232,8 @@ module.exports = (db) => ({
   },
 
   getEgresosDia: async (userId, page = 1, pageSize = 10, search = '') => {
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       //Obtener la ruta asignada al usuario
 
@@ -1276,7 +1243,7 @@ module.exports = (db) => ({
       }
 
       // Obtener la caja de la ruta
-      const caja = await client.query(
+      const caja = await db.query(
         'SELECT id FROM cajas WHERE "rutaId" = $1 LIMIT 1',
         [ruta[0].id]
       );
@@ -1291,7 +1258,7 @@ module.exports = (db) => ({
         const searchQuery = `%${search}%`;
 
         // Obtener total de registros con filtro de búsqueda
-        totalRes = await client.query(
+        totalRes = await db.query(
           `SELECT COUNT(*) FROM egresos 
            WHERE "cajaId" = $1 AND DATE("createdAt") = CURRENT_DATE
            AND LOWER(descripcion) LIKE LOWER($2)`,
@@ -1299,7 +1266,7 @@ module.exports = (db) => ({
         );
 
         // Obtener los egresos paginados con filtro de búsqueda
-        res = await client.query(
+        res = await db.query(
           `SELECT * FROM egresos 
            WHERE "cajaId" = $1 AND DATE("createdAt") = CURRENT_DATE
            AND LOWER(descripcion) LIKE LOWER($2)
@@ -1309,13 +1276,13 @@ module.exports = (db) => ({
         );
       } else {
         // Si no hay búsqueda, obtenemos todos los registros
-        totalRes = await client.query(
+        totalRes = await db.query(
           `SELECT COUNT(*) FROM egresos 
            WHERE "cajaId" = $1 AND DATE("createdAt") = CURRENT_DATE`,
           [cajaId]
         );
 
-        res = await client.query(
+        res = await db.query(
           `SELECT * FROM egresos 
            WHERE "cajaId" = $1 AND DATE("createdAt") = CURRENT_DATE
            ORDER BY "createdAt" DESC
@@ -1336,13 +1303,11 @@ module.exports = (db) => ({
 
     } catch (error) {
       throw error;
-    } finally {
-      client.release();
     }
   },
 
   getComprobanteById: async (id) => {
-    const pagoData = await pool.query(
+    const pagoData = await db.query(
       `SELECT 
         p.*, 
         c.nombres AS nombre

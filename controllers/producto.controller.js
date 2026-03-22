@@ -5,7 +5,7 @@ const catchError = require('../utils/catchError');  // Manejador de errores
 const createProducto = catchError(async (req, res) => {
   const Producto = ProductoModel(req.db);
   const { rutas, ...productoData } = req.body;  // Desestructurar rutas y el resto del producto
-  const producto = await Producto.create(productoData, rutas);
+  const producto = await Producto.create(productoData);
   return res.status(201).json({ data: producto });
 });
 

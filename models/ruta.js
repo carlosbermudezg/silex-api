@@ -1,17 +1,14 @@
-const db = require('../config/db');
-
 module.exports = (db) => ({
   // Crear una nueva ruta y asignarla al usuario en usuariorutas + crear config_credits
   create: async (rutaData) => {
-    const client = await db.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // 0️⃣ Validar límite de rutas
-      const countResult = await client.query('SELECT COUNT(*) FROM ruta');
+      const countResult = await db.query('SELECT COUNT(*) FROM ruta');
       const currentRoutes = parseInt(countResult.rows[0].count);
 
-      const configResultLimit = await client.query('SELECT routes_limit FROM config_default WHERE id = 1');
+      const configResultLimit = await db.query('SELECT routes_limit FROM config_default WHERE id = 1');
       const limit = configResultLimit.rows.length > 0 ? (configResultLimit.rows[0].routes_limit || 1) : 1;
 
       if (currentRoutes >= limit) {
@@ -25,7 +22,7 @@ module.exports = (db) => ({
         RETURNING *;
       `;
       const values = [rutaData.nombre, rutaData.oficinaId, rutaData.userCreate, rutaData.userId, rutaData.productoId];
-      const rutaResult = await client.query(queryText, values);
+      const rutaResult = await db.query(queryText, values);
       const ruta = rutaResult.rows[0];
 
       // 2️⃣ Insertar relación en usuariorutas
@@ -33,7 +30,7 @@ module.exports = (db) => ({
         INSERT INTO usuariorutas ("usuarioId", "rutaId", "createdAt", "updatedAt")
         VALUES ($1, $2, NOW(), NOW());
       `;
-      await client.query(userRutaQuery, [rutaData.userId, ruta.id]);
+      await db.query(userRutaQuery, [rutaData.userId, ruta.id]);
 
       // 3️⃣ Crear configuración de crédito por defecto para la ruta
       const configQuery = `
@@ -49,7 +46,7 @@ module.exports = (db) => ({
       const queryConfig = `
         SELECT * FROM config_default WHERE id = 1;
       `;
-      const configResult = await client.query(queryConfig);
+      const configResult = await db.query(queryConfig);
       const config = configResult.rows[0];
       const configValues = [
         ruta.id,
@@ -62,15 +59,13 @@ module.exports = (db) => ({
         config.frecuencia_pago  // frecuencia_pago por defecto como array ENUM
       ];
 
-      await client.query(configQuery, configValues);
+      await db.query(configQuery, configValues);
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return ruta;
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   },
 

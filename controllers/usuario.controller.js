@@ -4,7 +4,6 @@ const catchError = require('../utils/catchError');
 // Crear un nuevo usuario
 const createUsuario = catchError(async (req, res) => {
   const Usuario = UsuarioModel(req.db);
-  console.log(req.user) //usuario logueado
   try {
     const usuario = await Usuario.create(req.body);
     return res.status(201).json({ data: usuario });

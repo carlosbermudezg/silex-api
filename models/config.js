@@ -1,6 +1,4 @@
 // models/config.js
-const pool = require('../config/db'); // Importar la conexión a la base de datos
-
 module.exports = (db) => ({
   // Obtener todas las categorías de egresos
   getAllCategories: async (offset, limit, searchTerm) => {
@@ -19,8 +17,8 @@ module.exports = (db) => ({
       query += ` ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       params.push(limit, offset);
 
-      const data = await pool.query(query, params);
-      const total = await pool.query(countQuery, searchTerm ? [params[0]] : []);
+      const data = await db.query(query, params);
+      const total = await db.query(countQuery, searchTerm ? [params[0]] : []);
 
       return {
         data: data.rows,
@@ -48,8 +46,8 @@ module.exports = (db) => ({
       query += ` ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       params.push(limit, offset);
 
-      const data = await pool.query(query, params);
-      const total = await pool.query(countQuery, searchTerm ? [params[0]] : []);
+      const data = await db.query(query, params);
+      const total = await db.query(countQuery, searchTerm ? [params[0]] : []);
 
       return {
         data: data.rows,
@@ -63,7 +61,7 @@ module.exports = (db) => ({
   // Obtener todas las categorías de egresos
   getConfigCaja: async () => {
     try {
-      const res = await pool.query('SELECT * FROM config_caja WHERE id = 1');
+      const res = await db.query('SELECT * FROM config_caja WHERE id = 1');
       return res.rows;
     } catch (error) {
       throw error;
@@ -75,7 +73,7 @@ module.exports = (db) => ({
     try {
       const query = 'UPDATE config_Caja SET hora_cierre_caja = $1, hora_apertura_caja = $2, hora_gastos = $3 WHERE id = 1 RETURNING *';
       const values = [timeClose, timeOpen, timeGasto];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -85,7 +83,7 @@ module.exports = (db) => ({
   // Obtener una categoría de egreso por su ID
   getCategoryById: async (id) => {
     try {
-      const res = await pool.query('SELECT * FROM config_egresos_category WHERE id = $1', [id]);
+      const res = await db.query('SELECT * FROM config_egresos_category WHERE id = $1', [id]);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -97,7 +95,7 @@ module.exports = (db) => ({
     try {
       const query = 'INSERT INTO config_egresos_category (nombre, "createdAt", "updatedAt", archivada) VALUES ($1, NOW(), NOW(), FALSE) RETURNING *';
       const values = [nombre];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -109,7 +107,7 @@ module.exports = (db) => ({
     try {
       const query = 'INSERT INTO config_ingresos_category (nombre, "createdAt", "updatedAt", archivada) VALUES ($1, NOW(), NOW(), FALSE) RETURNING *';
       const values = [nombre];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -121,7 +119,7 @@ module.exports = (db) => ({
     try {
       const query = 'UPDATE config_egresos_category SET nombre = $1, archivada = $2, "updatedAt" = NOW() WHERE id = $3 RETURNING *';
       const values = [nombre, archivada, id];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -133,7 +131,7 @@ module.exports = (db) => ({
     try {
       const query = 'UPDATE config_ingresos_category SET nombre = $1, archivada = $2, "updatedAt" = NOW() WHERE id = $3 RETURNING *';
       const values = [nombre, archivada, id];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -145,7 +143,7 @@ module.exports = (db) => ({
     try {
       const query = 'UPDATE config_egresos_category SET archivada = $2, "updatedAt" = NOW() WHERE id = $1 RETURNING *';
       const values = [id, status];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -157,7 +155,7 @@ module.exports = (db) => ({
     try {
       const query = 'UPDATE config_ingresos_category SET archivada = $2, "updatedAt" = NOW() WHERE id = $1 RETURNING *';
       const values = [id, status];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res.rows[0];
     } catch (error) {
       throw error;
@@ -169,7 +167,7 @@ module.exports = (db) => ({
     try {
       // Verificar si la categoría está asociada a algún gasto
       const checkGastosQuery = 'SELECT * FROM egresos WHERE "gastoCategoryId" = $1';
-      const checkRes = await pool.query(checkGastosQuery, [id]);
+      const checkRes = await db.query(checkGastosQuery, [id]);
 
       if (checkRes.rows.length > 0) {
         throw new Error('No se puede eliminar la categoría. Está asociada a uno o más egresos.');
@@ -177,7 +175,7 @@ module.exports = (db) => ({
 
       const query = 'DELETE FROM config_egresos_category WHERE id = $1';
       const values = [id];
-      const res = await pool.query(query, values);
+      const res = await db.query(query, values);
       return res; // Retorna la cantidad de filas eliminadas
     } catch (error) {
       throw error;
@@ -190,7 +188,7 @@ module.exports = (db) => ({
       SELECT * FROM config_credits 
       WHERE "rutaId" = $1;
     `;
-    const result = await pool.query(queryText, [rutaId]);
+    const result = await db.query(queryText, [rutaId]);
     return result.rows[0];
   },
 
@@ -200,7 +198,7 @@ module.exports = (db) => ({
       SELECT * FROM config_default 
       WHERE id = 1;
     `;
-    const result = await pool.query(queryText);
+    const result = await db.query(queryText);
     return result.rows[0];
   },
 
@@ -215,7 +213,7 @@ module.exports = (db) => ({
       countQuery += ' WHERE nombre ILIKE $1';
       countParams = [`%${search}%`];
     }
-    const countResult = await pool.query(countQuery, countParams);
+    const countResult = await db.query(countQuery, countParams);
     const totalItems = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(totalItems / limit);
 
@@ -245,7 +243,7 @@ module.exports = (db) => ({
       LIMIT $1 OFFSET $2
     `;
 
-    const result = await pool.query(queryText, queryParams);
+    const result = await db.query(queryText, queryParams);
 
     return {
       data: result.rows,
@@ -282,7 +280,7 @@ module.exports = (db) => ({
     ];
 
     try {
-      const result = await pool.query(queryText, values);
+      const result = await db.query(queryText, values);
       return result.rows[0];  // Retorna la fila actualizada
     } catch (err) {
       console.error('Error al actualizar configuración de ruta', err);
@@ -325,7 +323,7 @@ module.exports = (db) => ({
     ];
 
     try {
-      const result = await pool.query(queryText, values);
+      const result = await db.query(queryText, values);
       return result.rows[0];  // Retorna la fila actualizada
     } catch (err) {
       console.error('Error al actualizar configuración por defecto', err);
@@ -340,7 +338,7 @@ module.exports = (db) => ({
       VALUES ($1, $2, NOW(), NOW())
       RETURNING *;
     `;
-    const result = await pool.query(query, [fecha, descripcion]);
+    const result = await db.query(query, [fecha, descripcion]);
     return result.rows[0];
   },
 
@@ -354,8 +352,8 @@ module.exports = (db) => ({
     const countQuery = `SELECT COUNT(*) FROM dias_no_laborables;`;
 
     const [result, countResult] = await Promise.all([
-      pool.query(query, [limit, offset]),
-      pool.query(countQuery),
+      db.query(query, [limit, offset]),
+      db.query(countQuery),
     ]);
 
     const total = parseInt(countResult.rows[0].count, 10);
@@ -371,12 +369,12 @@ module.exports = (db) => ({
   // Eliminar un día no laborable por ID
   deleteNoLaborable: async (id) => {
     const query = `DELETE FROM dias_no_laborables WHERE id = $1 RETURNING *;`;
-    const result = await pool.query(query, [id]);
+    const result = await db.query(query, [id]);
     return result.rows[0];
   },
 
   getConfigDiasNoLaborables: async () => {
-    const result = await pool.query(`SELECT * FROM config_dias_no_laborables LIMIT 1`);
+    const result = await db.query(`SELECT * FROM config_dias_no_laborables LIMIT 1`);
     return result.rows[0];
   },
 
@@ -398,7 +396,7 @@ module.exports = (db) => ({
       RETURNING *;
     `;
 
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
     return result.rows[0];
   },
 });
