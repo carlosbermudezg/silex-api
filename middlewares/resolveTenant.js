@@ -11,7 +11,7 @@ async function getTenantData(subdomain) {
     if (pending.has(subdomain)) {
         return pending.get(subdomain);
     }
-
+    console.log('subdomain: ' + subdomain);
     const promise = pool.query('SELECT schema_name FROM tenant WHERE subdomain = $1', [subdomain])
         .then(result => {
             if (result.rows.length === 0) {
@@ -25,6 +25,7 @@ async function getTenantData(subdomain) {
 
             return tenant;
         }).catch(err => {
+            console.log('Error al obtener el tenant: ' + err);
             pending.delete(subdomain);
             throw err;
         });
