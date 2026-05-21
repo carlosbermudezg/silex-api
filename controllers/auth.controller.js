@@ -1,10 +1,12 @@
 const UsuarioModel = require('../models/usuario');
 const PermisoModel = require('../models/permiso');
+const RutaModel = require('../models/ruta');
 const jwt = require('jsonwebtoken');
 
 const login = async (req, res) => {
   const Usuario = UsuarioModel(req.db);
   const Permiso = PermisoModel(req.db);
+  const Ruta = RutaModel(req.db);
   const { email, password } = req.body;
   const secretKey = process.env.TOKEN;
 
@@ -16,7 +18,7 @@ const login = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Credenciales inválidas. (1)' });
     }
 
-    if (!['administrador', 'administrador_oficina'].includes(usuario.tipo)) {
+    if (!['administrador', 'administrador_oficina', 'cobrador'].includes(usuario.tipo)) {
       return res.status(404).json({ success: false, message: 'Credenciales inválidas. (2)' });
     }
 
@@ -37,6 +39,11 @@ const login = async (req, res) => {
         permisos = permisosDescripcion.descripcion[0];
       }
     }
+    //Obtener la ruta asignada al usuario
+    let ruta = null;
+    if (usuario.tipo === 'cobrador') {
+      ruta = await Ruta.getByUserId(usuario.id);
+    }
     // 🎟 Generar el token con los permisos en el payload
     const token = jwt.sign(
       {
@@ -46,6 +53,7 @@ const login = async (req, res) => {
         role: usuario.tipo,
         status: usuario.estado,
         permisos: permisos,
+        ruta: ruta,
       },
       secretKey,
       { expiresIn: '1h' }

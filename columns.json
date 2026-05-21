@@ -1,0 +1,15 @@
+[
+  "id",
+  "company_name",
+  "subdomain",
+  "schema_name",
+  "database_name",
+  "stripe_customer_id",
+  "status",
+  "created_at",
+  "updated_at",
+  "trial_ends_at",
+  "routes_limit",
+  "subscription_start_at",
+  "subscription_ends_at"
+]

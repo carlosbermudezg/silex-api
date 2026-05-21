@@ -223,6 +223,7 @@ const crearEgreso = catchError(async (req, res) => {
 
     return res.status(201).json({ success: true, data: egreso });
   } catch (error) {
+    console.log(error)
     return res.status(500).json({ error: error.message });
   }
 });
@@ -438,7 +439,15 @@ const getComprobanteById = catchError(async (req, res) => {
   }
 
   // 1. Contenido para el QR
-  const qrData = `Comprobante #${pago.id}\nCliente: ${pago.nombre}\nMonto: $${pago.monto}\nSaldo: $${pago.saldo}\nMétodo: ${pago.metodoPago}\nFecha: ${new Date(pago.createdAt).toLocaleString()}`;
+  const qrData = `Comprobante #${pago.id}\nCliente: ${pago.nombre}\nMonto: $${pago.monto}\nSaldo: $${pago.saldo}\nMétodo: ${pago.metodoPago}\nFecha: ${new Date(pago.createdAt).toLocaleString('es-EC', {
+    timeZone: 'America/Guayaquil',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })}`;
 
   // 2. Generar código QR en base64
   const qrImageDataUrl = await QRCode.toDataURL(qrData);
@@ -540,7 +549,7 @@ const getEgresosDia = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
   const page = parseInt(req.query.page) || 1;
   const pageSize = parseInt(req.query.limit) || 10;
-  const search = req.query.search;
+  const search = req.query.search || "";
 
   const egresos = await Caja.getEgresosDia(req.user.userId, page, pageSize, search);
   return res.status(200).json(egresos);

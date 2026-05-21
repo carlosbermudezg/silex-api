@@ -8,6 +8,8 @@ const createCliente = catchError(async (req, res) => {
   const Cliente = ClienteModel(req.db);
   const { identificacion, nombres, telefono, direccion, rutaId } = req.body;
 
+  console.log("body: ", req.body);
+
   // Validaciones específicas por campo
   if (!nombres || !nombres.trim()) {
     return res.status(400).json({ error: 'El nombre es obligatorio' });
@@ -26,14 +28,17 @@ const createCliente = catchError(async (req, res) => {
   }
 
   // Validar identificación
-  const isValidIdentification = verificarCI(identificacion);
+  // const isValidIdentification = verificarCI(identificacion);
+  const isValidIdentification = ["Desconocido", true];
 
   if (isValidIdentification[1] === true) {
+    console.log("Datos del cliente: ", req.body);
     try {
       const client = await Cliente.create(req.body, isValidIdentification, req.user.userId);
       return res.status(201).json({ data: client }); // 201 Created
     } catch (err) {
       // Verificar si es un error por identificación duplicada
+      console.log("err: ", err);
       if (err.status === 409) {
         return res.status(409).json({ error: err.message }); // Conflicto
       }

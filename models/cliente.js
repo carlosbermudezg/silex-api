@@ -14,15 +14,14 @@ module.exports = (db) => ({
       fotos
     } = clienteData;
 
-    const client = await db.connect();
     try {
-      await client.query('BEGIN');
+      await db.query('BEGIN');
 
       // 0️⃣ Verificar si la identificación ya existe
       const checkIdentificacionQuery = `
         SELECT id FROM clientes WHERE identificacion = $1;
       `;
-      const checkResult = await client.query(checkIdentificacionQuery, [identificacion]);
+      const checkResult = await db.query(checkIdentificacionQuery, [identificacion]);
 
       if (checkResult.rows.length > 0) {
         throw { code: 'IDENTIFICACION_DUPLICADA', message: 'Ya existe un cliente con esa identificación' };
@@ -35,7 +34,7 @@ module.exports = (db) => ({
         RETURNING id;
       `;
       const clienteValues = [nombres, telefono, direccion, coordenadasCasa, coordenadasCobro, identificacion, rutaId, nacionalidad[0], userId];
-      const result = await client.query(insertClienteQuery, clienteValues);
+      const result = await db.query(insertClienteQuery, clienteValues);
       const clienteId = result.rows[0].id;
 
       // 2️⃣ Insertar las fotos en la tabla fotoclientes
@@ -46,15 +45,15 @@ module.exports = (db) => ({
         `;
 
         for (const foto of fotos) {
-          await client.query(insertFotoQuery, [clienteId, foto]);
+          await db.query(insertFotoQuery, [clienteId, foto]);
         }
       }
 
-      await client.query('COMMIT');
+      await db.query('COMMIT');
       return { id: clienteId };
 
     } catch (error) {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
 
       // Manejar error personalizado
       if (error.code === 'IDENTIFICACION_DUPLICADA') {
@@ -62,8 +61,6 @@ module.exports = (db) => ({
       }
 
       throw error;
-    } finally {
-      client.release();
     }
   },
 

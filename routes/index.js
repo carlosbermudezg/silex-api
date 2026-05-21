@@ -35,8 +35,6 @@ router.use('/vehiculos', routerVehiculos);  // Ruta para manejar Vehiculos
 router.use('/permisos', routerPermisos); //Ruta para manejar permisos
 router.use('/traslado', routerTraslados);  // Ruta para manejar Pagos
 router.use('/config', routerConfig);  // Ruta para manejar Configuración
-router.use('/backup', routerBackup);  //Ruta para importar
-
 
 // Si tienes más rutas, puedes seguir agregándolas de la misma forma
 // router.use('/otraRuta', routerOtraRuta);

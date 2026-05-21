@@ -1,8 +1,8 @@
 // models/caja.js
-const Ruta = require('./ruta'); // Importar el modelo de Caja
+const Ruta = require('./ruta');
 const Cliente = require('./cliente');
 
-module.exports = (db) => ({
+module.exports = (db) => (Caja = {
 
   // Obtener todas las cajas
   getAll: async () => {
@@ -94,7 +94,8 @@ module.exports = (db) => ({
   // Obtener una caja por su ID de usuario
   getByUserId: async (id) => {
     try {
-      const ruta = await Ruta.getByUserId(id);
+      const ruta = await Ruta(db).getByUserId(id);
+
       if (!ruta) {
         throw new Error('No tienes una ruta asignada');
       }
@@ -373,7 +374,7 @@ module.exports = (db) => ({
     try {
       await db.query('BEGIN');
 
-      const ruta = await Ruta.getByUserId(userId);
+      const ruta = await Ruta(db).getByUserId(userId);
 
       if (!ruta) {
         throw new Error('No tienes una ruta asignada');
@@ -1237,7 +1238,7 @@ module.exports = (db) => ({
 
       //Obtener la ruta asignada al usuario
 
-      const ruta = await Ruta.getByUserId(userId);
+      const ruta = await Ruta(db).getByUserId(userId);
       if (!ruta) {
         throw new Error('No tienes una ruta asignada');
       }

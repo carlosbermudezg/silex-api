@@ -33,16 +33,19 @@ const swaggerDocs = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 //Fin de la documentación
 
-// Aumenta el límite de tamaño del cuerpo de la solicitud
-app.use(express.json({ limit: "10mb" })); // Aumenta el límite a 10MB
-app.use(express.urlencoded({ limit: "10mb", extended: true }));
-
 app.use(helmet({
   crossOriginResourcePolicy: false,
 }));
 
-// Middleware para procesar JSON
-app.use(express.json());
+// Stripe router first (handles its own body parsing for webhooks)
+app.use('/api/v1/stripe', require('./routes/stripe.router'));
+
+// Global Middlewares for the rest of the API (including tenants)
+app.use(express.json({ limit: "10mb" })); 
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
+
+// Route for tenant registration
+app.use('/api/v1/tenants', require('./routes/tenant.router'));
 
 //Middleware para agregar schema dinámico
 app.use(getTenant);

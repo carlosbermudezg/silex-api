@@ -1,6 +1,3 @@
-// models/Traslado.js
-const pool = require('../config/db');
-
 module.exports = (db) => ({
   createClienteTrasladoMasivo: async (data) => {
     const {
