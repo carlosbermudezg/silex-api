@@ -485,7 +485,15 @@ const getComprobanteById = catchError(async (req, res) => {
   doc.font('Helvetica').text(` ${pago.id}`);
 
   doc.font('Helvetica-Bold').text('Fecha:', { continued: true });
-  doc.font('Helvetica').text(` ${new Date(pago.createdAt).toLocaleString()}`);
+  doc.font('Helvetica').text(` ${new Date(pago.createdAt).toLocaleString('es-EC', {
+    timeZone: 'America/Guayaquil',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })}`);
 
   doc.font('Helvetica-Bold').text('Cliente:', { continued: true });
   doc.font('Helvetica').text(` ${pago.nombre}`);
