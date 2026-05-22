@@ -31,10 +31,9 @@ const getTurno = catchError(async (req, res) => {
   const { id } = req.params;
   const caja = await Caja.getTurnoById(id);
   if (!caja) {
-    console.log('no hay turno')
-    return res.status(200).json({ message: 'No hay un turno activo' });
+    return res.status(404).json({ message: 'No hay un turno activo' });
   }
-  console.log('si hay turno')
+
   return res.status(200).json(caja);
 });
 
