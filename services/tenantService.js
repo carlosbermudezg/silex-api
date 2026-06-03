@@ -58,7 +58,7 @@ async function createTenantSchema(schemaName, adminName = 'Admin', adminEmail = 
 
         addLog(`Iniciando creación del esquema: ${safeSchemaName} en base de datos SAAS`);
 
-        const sqlTemplatePath = path.join(__dirname, '..', 'utils', 'sss.sql');
+        const sqlTemplatePath = path.join(__dirname, 'default.sql');
         addLog(`Leyendo template SQL desde: ${sqlTemplatePath}`);
 
         let sqlContent;
@@ -71,8 +71,9 @@ async function createTenantSchema(schemaName, adminName = 'Admin', adminEmail = 
 
         sqlContent = sqlContent.replace(/tenant_001/g, safeSchemaName);
         sqlContent = sqlContent.replace(/[^\x00-\xFF]/g, '');
+        sqlContent = sqlContent.replace(/COPY\s+[^;]+FROM\s+stdin;[\s\S]*?^\\\.\s*$/gim, '');
 
-        const lines = sqlContent.split('\n');
+        const lines = sqlContent.split(/\r?\n/);
         const cleanedLines = [];
         for (const line of lines) {
             const trimmed = line.trim();
@@ -83,39 +84,16 @@ async function createTenantSchema(schemaName, adminName = 'Admin', adminEmail = 
             cleanedLines.push(line);
         }
 
-        const rawStatements = cleanedLines.join('\n').split(';');
-        const statements = rawStatements.map(stmt => stmt.trim()).filter(stmt => {
-            if (!stmt) return false;
-            return (
-                stmt.startsWith('CREATE SCHEMA') || stmt.startsWith('CREATE TYPE') ||
-                stmt.startsWith('CREATE TABLE') || stmt.startsWith('CREATE SEQUENCE') ||
-                stmt.startsWith('CREATE INDEX') || stmt.startsWith('CREATE UNIQUE INDEX') ||
-                (stmt.startsWith('ALTER SEQUENCE') && stmt.includes('OWNED BY')) ||
-                (stmt.startsWith('ALTER TABLE') && (
-                    stmt.includes('ADD CONSTRAINT') ||
-                    stmt.includes('SET DEFAULT') ||
-                    stmt.includes('ALTER COLUMN')
-                ))
-            );
-        });
+        const cleanedSql = cleanedLines.join('\n');
+        addLog(`Ejecutando SQL generado en base de datos SAAS...`);
 
-        addLog(`Ejecutando ${statements.length} statements SQL en base de datos SAAS...`);
-
-        let successCount = 0;
-        let errorCount = 0;
-        for (let i = 0; i < statements.length; i++) {
-            try {
-                await poolSaas.query(statements[i] + ';');
-                successCount++;
-            } catch (error) {
-                errorCount++;
-                if (!error.message.includes('already exists')) {
-                    addLog(`Error en statement ${i + 1}: ${error.message.substring(0, 100)}`, 'error');
-                }
-            }
+        try {
+            await poolSaas.query(cleanedSql);
+            addLog(`Estructura y datos base aplicados correctamente`, 'success');
+        } catch (sqlError) {
+            addLog(`Error ejecutando SQL base: ${sqlError.message}`, 'error');
+            throw sqlError;
         }
-
-        addLog(`Tablas creadas: ${successCount} exitosas, ${errorCount} errores`, 'success');
 
         // 2.5 Insertar Configuraciones Iniciales
         addLog(`Insertando configuraciones iniciales obligatorias...`);
@@ -140,6 +118,13 @@ async function createTenantSchema(schemaName, adminName = 'Admin', adminEmail = 
                     INSERT INTO "${safeSchemaName}".config_dias_no_laborables (id, excluir_sabados, excluir_domingos, updated_at)
                     VALUES (1, false, true, NOW())
                     ON CONFLICT (id) DO NOTHING;
+                `);
+
+                await client.query(`
+                    INSERT INTO "${safeSchemaName}".empresas
+                    (nombre, ruc, direccion, telefono, correo, logo, "createdAt", "updatedAt")
+                    VALUES ('Empresa Demo', '9999999999', 'Calle Falsa 123', '3000000000', 'demo@empresa.com', '', NOW(), NOW())
+                    ON CONFLICT (ruc) DO NOTHING;
                 `);
             } finally {
                 client.release();
@@ -170,9 +155,9 @@ async function createTenantSchema(schemaName, adminName = 'Admin', adminEmail = 
 
         try {
             await poolSaas.query(`
-                INSERT INTO "${safeSchemaName}".permisos (nombre, descripcion, "createdAt", "updatedAt")
-                VALUES ('Super Administrador', ARRAY['${permissionsJson}'], NOW(), NOW())
-            `);
+                INSERT INTO "${safeSchemaName}".permisos (nombre, descripcion, "createdAt", "updatedAt", public_id)
+                VALUES ('Super Administrador', ARRAY['${permissionsJson}'], NOW(), NOW(), $1)
+            `, [crypto.randomUUID()]);
             addLog(`Perfil 'Super Administrador' creado`, 'success');
         } catch (permError) {
             addLog(`Error creando permisos: ${permError.message}`, 'error');
@@ -185,12 +170,12 @@ async function createTenantSchema(schemaName, adminName = 'Admin', adminEmail = 
                 const hashedPassword = await bcrypt.hash(randomPassword, 10);
                 await poolSaas.query(`
                     INSERT INTO "${safeSchemaName}".usuarios 
-                    (nombre, correo, contrasena, tipo, "permisoId", "createdAt", "updatedAt", estado)
+                    (nombre, correo, contrasena, tipo, "permisoId", "createdAt", "updatedAt", estado, public_id)
                     VALUES 
                     ($1, $2, $3, 'administrador', 
                         (SELECT id FROM "${safeSchemaName}".permisos WHERE nombre = 'Super Administrador' LIMIT 1),
-                        NOW(), NOW(), 'activo')
-                `, [adminName, adminEmail, hashedPassword]);
+                        NOW(), NOW(), 'activo', $4)
+                `, [adminName, adminEmail, hashedPassword, crypto.randomUUID()]);
                 addLog(`Usuario superadministrador creado exitosamente`, 'success');
 
                 await sendWelcomeEmail({
@@ -219,7 +204,7 @@ async function createTenantSchema(schemaName, adminName = 'Admin', adminEmail = 
 /**
  * Registra un nuevo tenant y usuario en la base de datos master
  */
-async function registerTenant({ email, name, photo, loginType, routesLimit = 1 }) {
+async function registerTenant({ email, name, photo, loginType, routesLimit = 1, timezone }) {
     const uuid = crypto.randomUUID().replace(/-/g, '_');
     const schemaName = `tenant_${uuid}`;
     const subscriptionEndsAt = new Date();
@@ -238,6 +223,11 @@ async function registerTenant({ email, name, photo, loginType, routesLimit = 1 }
         console.error("❌ Error creando cliente Stripe:", stripeError);
     }
 
+    // normalize timezone: prefer provided, otherwise env, otherwise default
+    const tenantTimezone = (timezone && typeof timezone === 'string')
+        ? timezone
+        : (process.env.GENERIC_TIMEZONE ? process.env.GENERIC_TIMEZONE.replace(/(^\"|\"$)/g, '') : 'America/Guayaquil');
+
     const client = await poolMaster.connect();
     try {
         await client.query('BEGIN');
@@ -248,14 +238,14 @@ async function registerTenant({ email, name, photo, loginType, routesLimit = 1 }
         // 1. Crear el tenant
         const tenantRes = await client.query(`
             INSERT INTO tenant (
-                company_name, subdomain, schema_name, database_name, status, 
+                company_name, subdomain, schema_name, database_name, timezone, status, 
                 subscription_start_at, subscription_ends_at, 
                 stripe_customer_id, routes_limit, "created_at", "updated_at"
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
             RETURNING id
         `, [
-            name, uuid, schemaName, 'client_db_1', 'trial', 
+            name, uuid, schemaName, 'client_db_1', tenantTimezone, 'trial', 
             now, subscriptionEndsAt, 
             stripeCustomerId, routesLimit
         ]);
@@ -269,6 +259,20 @@ async function registerTenant({ email, name, photo, loginType, routesLimit = 1 }
         `, [name, email, photo || '', loginType, 'active', tenantId, false]);
 
         await client.query('COMMIT');
+
+        // 2.5 Insertar eventos programados por defecto en la tabla master
+        try {
+            // abrir y cierre por defecto según configuraciones iniciales
+            const days = ['lunes','martes','miercoles','jueves','viernes'];
+            await poolMaster.query(`
+                INSERT INTO scheduled_cron_events (tenant_id, tenant_schema, tenant_database, action, schedule_time, days_of_week, active, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5::time, $6, true, NOW(), NOW()),
+                       ($1, $2, $3, $7, $8::time, $6, true, NOW(), NOW())
+            `, [tenantId, schemaName, 'client_db_1', 'open', '08:00:00', days, 'close', '20:00:00']);
+            console.log('✅ Eventos programados por defecto insertados en master para tenant', tenantId);
+        } catch (evtErr) {
+            console.warn('⚠️ No se pudieron insertar eventos programados por defecto:', evtErr.message);
+        }
 
         // 3. Lanzar creación de esquema en background
         createTenantSchema(schemaName, name, email, uuid, subscriptionEndsAt)

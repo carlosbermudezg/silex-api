@@ -2,9 +2,17 @@ const express = require('express');
 const router = express.Router();
 const CajaController = require('../controllers/caja.controller');
 const verifyToken = require('../utils/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
 
 // Ruta para obtener los egresos (endpoint administracion)
-router.get('/allegresos', verifyToken, CajaController.getAllEgresos);
+//verificar si se usa esta ruta
+router.get(
+    '/allegresos', 
+    verifyToken, 
+    allowRoles("administrador", "administrador_oficina"),
+    CajaController.getAllEgresos
+);
+
 // Ruta para agregar saldo a la caja de un usuario
 router.post('/addsaldo', verifyToken, CajaController.agregarSaldo);
 // Ruta para asignar saldo a administrador de oficina

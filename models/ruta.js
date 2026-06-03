@@ -17,11 +17,11 @@ module.exports = (db) => ({
 
       // 1️⃣ Insertar la nueva ruta
       const queryText = `
-        INSERT INTO ruta (nombre, "oficinaId", user_create, "userId", "createdAt", "updatedAt", "productoId") 
+        INSERT INTO ruta (nombre, "oficinaId", user_create, "userId", "createdAt", "updatedAt", "public_id") 
         VALUES ($1, $2, $3, $4, NOW(), NOW(), $5)
         RETURNING *;
       `;
-      const values = [rutaData.nombre, rutaData.oficinaId, rutaData.userCreate, rutaData.userId, rutaData.productoId];
+      const values = [rutaData.nombre, rutaData.oficinaId, rutaData.userCreate, rutaData.userId, crypto.randomUUID()];
       const rutaResult = await db.query(queryText, values);
       const ruta = rutaResult.rows[0];
 
@@ -36,9 +36,9 @@ module.exports = (db) => ({
       const configQuery = `
         INSERT INTO config_credits (
           "rutaId", max_credits, interes, plazo_minimo, plazo_maximo,
-          monto_minimo, monto_maximo, frecuencia_pago
+          monto_minimo, monto_maximo, frecuencia_pago, "public_id"
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8
+          $1, $2, $3, $4, $5, $6, $7, $8, $9
         );
       `;
 
@@ -56,13 +56,19 @@ module.exports = (db) => ({
         config.plazo_maximo,    // plazo_maximo
         config.monto_minimo,    // monto_minimo
         config.monto_maximo,    // monto_maximo
-        config.frecuencia_pago  // frecuencia_pago por defecto como array ENUM
+        config.frecuencia_pago, // frecuencia_pago por defecto como array ENUM
+        crypto.randomUUID()     // public_id
       ];
 
       await db.query(configQuery, configValues);
 
+      // Crear la caja de la ruta con saldo inicial de 0
+      const query = 'INSERT INTO cajas ("saldoActual", "rutaId", "createdAt", "updatedAt", estado, "public_id") VALUES ($1, $2, NOW(), NOW(), $3, $4) RETURNING *';
+      const valuesCaja = [0, ruta.id, 'cerrada', crypto.randomUUID()];
+      const caja = await db.query(query, valuesCaja);
+
       await db.query('COMMIT');
-      return ruta;
+      return { message: 'Ruta creada exitosamente' };
     } catch (error) {
       await db.query('ROLLBACK');
       throw error;
@@ -90,7 +96,7 @@ module.exports = (db) => ({
       FROM ruta r
       LEFT JOIN usuariorutas ur ON r.id = ur."rutaId"
       LEFT JOIN usuarios u ON ur."usuarioId" = u.id
-      WHERE r.id = $1;
+      WHERE r.public_id = $1;
     `;
 
     const result = await db.query(queryText, [id]);

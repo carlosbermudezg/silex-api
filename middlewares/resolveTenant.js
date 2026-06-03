@@ -11,7 +11,6 @@ async function getTenantData(subdomain) {
     if (pending.has(subdomain)) {
         return pending.get(subdomain);
     }
-    console.log('subdomain: ' + subdomain);
     const promise = pool.query('SELECT schema_name FROM tenant WHERE subdomain = $1', [subdomain])
         .then(result => {
             if (result.rows.length === 0) {
@@ -32,21 +31,18 @@ async function getTenantData(subdomain) {
 
     pending.set(subdomain, promise);
 
-    console.log(promise)
-
     return promise;
 }
 
 module.exports = async function resolveTenant(req, res, next) {
     try {
-        console.log('resolveTenant', req.tenant);
         const tenantData = await getTenantData(req.tenant);
 
         req.schema = tenantData.schema_name;
-        console.log(tenantData.schema_name);
 
         next();
     } catch (err) {
+        console.log('Error en resolveTenant: ' + err);
         return res.status(404).json({ error: 'Tenant no válido' });
     }
 };

@@ -10,21 +10,21 @@ const createUsuario = catchError(async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.detail ? err.detail : err });
   }
-});
+}); //Verificado
 
 // Obtener todos los usuarios con paginación
 const getAllUsuarios = catchError(async (req, res) => {
   const Usuario = UsuarioModel(req.db);
-  const { page, limit } = req.query;
+  const { page, limit, search } = req.query;
   const offset = (page - 1) * parseInt(limit);
 
   try {
-    const usuarios = await Usuario.getAll(page, limit, offset);
+    const usuarios = await Usuario.getAll(page, limit, offset, search);
     return res.status(200).json(usuarios);
   } catch (err) {
     return res.status(500).json({ error: err.detail ? err.detail : "Ocurrio un error" });
   }
-});
+}); //Verificado
 
 // Obtener un usuario por ID
 const getUsuarioById = catchError(async (req, res) => {
@@ -38,35 +38,7 @@ const getUsuarioById = catchError(async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.detail ? err.detail : "Ocurrio un error" });
   }
-});
-
-// Archivar un usuario
-const archiveUsuario = catchError(async (req, res) => {
-  const Usuario = UsuarioModel(req.db);
-  try {
-    const usuario = await Usuario.archive(req.params.id);
-    if (!usuario) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
-    }
-    return res.status(200).json(usuario);
-  } catch (err) {
-    return res.status(500).json({ error: err.detail ? err.detail : "Ocurrio un error" });
-  }
-});
-
-// Desarchivar un usuario
-const DesarchiveUsuario = catchError(async (req, res) => {
-  const Usuario = UsuarioModel(req.db);
-  try {
-    const usuario = await Usuario.desarchive(req.params.id);
-    if (!usuario) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
-    }
-    return res.status(200).json(usuario);
-  } catch (err) {
-    return res.status(500).json({ error: err.detail ? err.detail : "Ocurrio un error" });
-  }
-});
+}); //Verificado
 
 // Editar un usuario por ID
 const editUsuario = catchError(async (req, res) => {
@@ -76,24 +48,11 @@ const editUsuario = catchError(async (req, res) => {
     if (!usuario) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
-    return res.status(200).json(usuario);
+    return res.status(200).json({ data: usuario });
   } catch (err) {
     return res.status(500).json({ error: err.detail ? err.detail : err.code });
   }
-});
-
-// Buscar usuarios por sus datos
-const searchUsuarios = catchError(async (req, res) => {
-  const Usuario = UsuarioModel(req.db);
-  const { searchTerm, page, limit } = req.query;
-  const offset = (page - 1) * limit;
-  try {
-    const usuarios = await Usuario.searchByData(searchTerm, page, limit, offset);
-    return res.status(200).json(usuarios);
-  } catch (err) {
-    return res.status(500).json({ error: err.detail ? err.detail : "Ocurrió un error" });
-  }
-});
+}); //Verificado
 
 // Obtener usuarios por oficina con paginación
 const getUsuariosByOficina = catchError(async (req, res) => {
@@ -113,9 +72,6 @@ module.exports = {
   createUsuario,
   getAllUsuarios,
   getUsuarioById,
-  archiveUsuario,
-  DesarchiveUsuario,
   editUsuario,
-  searchUsuarios,
   getUsuariosByOficina
 };

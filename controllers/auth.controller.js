@@ -13,56 +13,49 @@ const login = async (req, res) => {
   try {
 
     const usuario = await Usuario.getByEmail(email);
-
     if (!usuario) {
-      return res.status(404).json({ success: false, message: 'Credenciales inválidas. (1)' });
+      return res.status(403).json({ success: false, message: 'Credenciales inválidas.' });
     }
 
-    if (!['administrador', 'administrador_oficina', 'cobrador'].includes(usuario.tipo)) {
-      return res.status(404).json({ success: false, message: 'Credenciales inválidas. (2)' });
+    if (!['administrador', 'administrador_oficina'].includes(usuario.tipo)) {
+      return res.status(403).json({ success: false, message: 'Solo los administradores pueden acceder.' });
     }
 
     const isPasswordValid = await Usuario.validatePassword(password, usuario.contrasena);
-
     if (!isPasswordValid) {
-      return res.status(401).json({ success: false, message: 'Credenciales inválidas. (3)' });
+      return res.status(403).json({ success: false, message: 'Credenciales inválidas.' });
     }
 
-    // ✅ Obtener permisos desde la tabla permisos
+    //Obtener permisos desde la tabla permisos
     let permisos = [];
     if (usuario.permisoId) {
-      const permisosDescripcion = await Permiso.getById(usuario.permisoId);
-      // Asegurarse que es un array válido (puede estar como string si viene así desde DB)
-      if (typeof permisosDescripcion.descripcion[0] === 'string') {
-        permisos = JSON.parse(permisosDescripcion.descripcion[0]);
-      } else if (Array.isArray(permisosDescripcion.descripcion[0])) {
-        permisos = permisosDescripcion.descripcion[0];
+      const permisosDescripcion = await Permiso.getByIdInterno(usuario.permisoId);
+      if (typeof permisosDescripcion.descripcion != 'object') {
+        return res.status(500).json({ success: false, message: 'Error al obtener permisos del usuario.' });
       }
+      permisos = Array.isArray(permisosDescripcion.descripcion) ? permisosDescripcion.descripcion : [permisosDescripcion.descripcion];
     }
-    //Obtener la ruta asignada al usuario
-    let ruta = null;
-    if (usuario.tipo === 'cobrador') {
-      ruta = await Ruta.getByUserId(usuario.id);
-    }
+    //Datos de Login
+    const loginData = {
+      userId: usuario.id,
+      name: usuario.nombre,
+      email: usuario.correo,
+      role: usuario.tipo,
+      status: usuario.estado,
+      permisos: permisos,
+      company: company,
+      platform: 'web',
+    };
     // 🎟 Generar el token con los permisos en el payload
     const token = jwt.sign(
-      {
-        userId: usuario.id,
-        name: usuario.nombre,
-        email: usuario.correo,
-        role: usuario.tipo,
-        status: usuario.estado,
-        permisos: permisos,
-        ruta: ruta,
-        company: company,
-      },
+      loginData,
       secretKey,
-      { expiresIn: '1h' }
+      { expiresIn: '1d' }
     );
 
     return res.status(200).json({
       success: true,
-      message: 'Login exitoso',
+      message: 'Ha iniciado sesión exitosamente',
       token,
     });
 
@@ -70,10 +63,87 @@ const login = async (req, res) => {
     console.log(error)
     return res.status(500).json({
       success: false,
-      message: 'Error en el servidor',
+      message: 'Ha ocurrido un error en el servidor',
       error: error.message
     });
   }
 };
 
-module.exports = { login };
+const loginmobile = async (req, res) => {
+  const Usuario = UsuarioModel(req.db);
+  const Permiso = PermisoModel(req.db);
+  const Ruta = RutaModel(req.db);
+  const { email, password, company } = req.body;
+  const secretKey = process.env.TOKEN;
+
+  try {
+
+    const usuario = await Usuario.getByEmail(email);
+
+    if (!usuario) {
+      return res.status(403).json({ success: false, message: 'Credenciales inválidas.' });
+    }
+
+    if (!['cobrador'].includes(usuario.tipo)) {
+      return res.status(403).json({ success: false, message: 'Solo los cobradores pueden acceder.' });
+    }
+
+    const isPasswordValid = await Usuario.validatePassword(password, usuario.contrasena);
+
+    if (!isPasswordValid) {
+      return res.status(403).json({ success: false, message: 'Credenciales inválidas.' });
+    }
+
+    //Obtener permisos desde la tabla permisos
+    let permisos = [];
+    if (usuario.permisoId) {
+      const permisosDescripcion = await Permiso.getByIdInterno(usuario.permisoId);
+      if (typeof permisosDescripcion.descripcion != 'object') {
+        return res.status(500).json({ success: false, message: 'Error al obtener permisos del usuario.' });
+      }
+      permisos = Array.isArray(permisosDescripcion.descripcion) ? permisosDescripcion.descripcion : [permisosDescripcion.descripcion];
+    }
+    //Obtener la ruta asignada al usuario
+    let ruta = null;
+    if (usuario.tipo === 'cobrador') {
+      ruta = await Ruta.getByUserId(usuario.id);
+    }
+    //Datos de Login
+    const loginData = {
+      userId: usuario.id,
+      name: usuario.nombre,
+      email: usuario.correo,
+      role: usuario.tipo,
+      status: usuario.estado,
+      permisos: permisos,
+      ruta: {
+        id: ruta && ruta.length > 0 ? ruta[0].public_id : null,
+        nombre: ruta && ruta.length > 0 ? ruta[0].nombre : null,
+      },
+      company: company,
+      platform: 'mobile',
+    };
+    // 🎟 Generar el token con los permisos en el payload
+    const token = jwt.sign(
+      loginData,
+      secretKey,
+      { expiresIn: '1d' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Ha iniciado sesión exitosamente',
+      token,
+    });
+
+  } catch (error) {
+    console.log(error)
+    return res.status(500).json({
+      success: false,
+      message: 'Ha ocurrido un error en el servidor',
+      error: error.message
+    });
+  }
+};
+
+module.exports = { login, loginmobile };

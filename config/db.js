@@ -15,7 +15,8 @@ const pool = new Pool({
 pool.on('connect', async (client) => {
   try {
     const tz = process.env.GENERIC_TIMEZONE || 'UTC';
-    await client.query(`SET timezone = '${tz}'`);
+    // Usar función parametrizada para evitar errores de sintaxis en comandos SET
+    await client.query('SELECT pg_catalog.set_config($1, $2, true)', ['TimeZone', tz]);
     console.log(`⏰ Zona horaria de sesión configurada a: ${tz}`);
   } catch (err) {
     console.error('❌ Error al configurar la zona horaria:', err);

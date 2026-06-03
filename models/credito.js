@@ -2,6 +2,7 @@ const db = require('../config/db');
 const Caja = require('./caja');
 const Cliente = require('./cliente');
 const Config = require('./config');
+const Ruta = require('./ruta');
 
 module.exports = (db) => ({
   // Crear un crédito
@@ -180,12 +181,12 @@ module.exports = (db) => ({
 
     let joins = `
       LEFT JOIN clientes cl ON c."clienteId" = cl.id
-      LEFT JOIN ruta r ON cl."rutaId" = r.id
+      LEFT JOIN ruta r ON cl."ruta_id" = r.id
     `;
 
     // Si se selecciona una ruta, filtra por esa ruta
     if (rutaId) {
-      whereClause += ` AND cl."rutaId" = ${rutaId}`;
+      whereClause += ` AND cl."ruta_id" = ${rutaId}`;
     }
     // Si se selecciona una oficina, filtra por las rutas de esa oficina
     else if (oficinaId) {
@@ -277,7 +278,8 @@ module.exports = (db) => ({
   },
 
   getDataDash: async (rutaId) => {
-    if (!rutaId) return [];
+    const ruta = await Ruta(db).getById(rutaId);
+    if (!ruta) return [];
 
     try {
       const query = `
@@ -299,7 +301,7 @@ module.exports = (db) => ({
           FROM creditos c
           INNER JOIN clientes cl ON cl.id = c."clienteId"
           WHERE c.estado = 'impago'
-            AND cl."rutaId" = $1
+            AND cl."ruta_id" = $1
         ),
 
         ---------------------------------------------------------
@@ -412,7 +414,7 @@ module.exports = (db) => ({
         FROM clasificacion;
       `;
 
-      const result = await db.query(query, [rutaId.id]);
+      const result = await db.query(query, [ruta.id]);
       return result.rows[0];
 
     } catch (error) {
@@ -422,7 +424,8 @@ module.exports = (db) => ({
   },
 
   getDataDashBars: async (frecuencia, rutaId) => {
-    if (rutaId === null) {
+    const ruta = await Ruta(db).getById(rutaId);
+    if (!ruta) {
       return []
     }
     try {
@@ -443,7 +446,7 @@ module.exports = (db) => ({
           FROM creditos c
           JOIN clientes cl ON cl.id = c."clienteId"
           JOIN fechas f ON DATE(c."createdAt") BETWEEN f.desde AND f.hoy
-          WHERE cl."rutaId" = $2
+          WHERE cl."ruta_id" = $2
           GROUP BY DATE(c."createdAt")
         ),
         caja_ruta AS (
@@ -483,7 +486,7 @@ module.exports = (db) => ({
         SELECT * FROM resultados;
       `;
 
-      const data = await db.query(queryText, [frecuencia, rutaId]);
+      const data = await db.query(queryText, [frecuencia, ruta.id]);
 
       if (frecuencia === 'diario') {
         const hoyLocal = new Date();
@@ -534,7 +537,7 @@ module.exports = (db) => ({
           'coordenadasCasa', cl."coordenadasCasa",
           'coordenadasCobro', cl."coordenadasCobro",
           'identificacion', cl.identificacion,
-          'rutaId', cl."rutaId",
+          'rutaId', cl."ruta_id",
           'fotos', (
             SELECT COALESCE(json_agg(foto.foto), '[]'::json)
             FROM fotoclientes foto
@@ -626,7 +629,7 @@ module.exports = (db) => ({
           'coordenadasCasa', cl."coordenadasCasa",
           'coordenadasCobro', cl."coordenadasCobro",
           'identificacion', cl.identificacion,
-          'rutaId', cl."rutaId",
+          'rutaId', cl."ruta_id",
           'fotos', (
             SELECT COALESCE(json_agg(foto.foto), '[]'::json)
             FROM fotoclientes foto

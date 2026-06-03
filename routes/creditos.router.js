@@ -7,8 +7,6 @@ const router = express.Router();
 router.post('/', verifyToken, creditoController.createCredito);
 router.get('/', verifyToken, creditoController.getAllCreditos);
 router.post('/pagar', verifyToken, creditoController.createPago);
-router.get('/datadash', verifyToken, creditoController.getDataDash);
-router.get('/datadashbars', verifyToken, creditoController.getDataDashBars);
 router.get("/creditos-impagos", verifyToken, creditoController.getCreditosImpagos);
 router.get('/:id', verifyToken, creditoController.getCreditoById);
 router.put('/:id', verifyToken, creditoController.updateCredito);

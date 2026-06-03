@@ -10,18 +10,19 @@ const permisoController = {
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
     }
-  },
+  }, //Verificado
 
   // Obtener todos los permisos
   getAll: async (req, res) => {
     const Permiso = PermisoModel(req.db);
+    const { search } = req.query;
     try {
-      const permisos = await Permiso.getAll();
+      const permisos = await Permiso.getAll(search);
       res.status(200).json({ success: true, data: permisos });
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
     }
-  },
+  }, //Verificado
 
   // Obtener un permiso por ID
   getById: async (req, res) => {
@@ -34,18 +35,7 @@ const permisoController = {
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
     }
-  },
-
-  // Obtener usuarios con un permiso específico
-  getUsuariosByPermiso: async (req, res) => {
-    const Permiso = PermisoModel(req.db);
-    try {
-      const usuarios = await Permiso.getUsuariosByPermiso(req.params.id);
-      res.status(200).json({ success: true, data: usuarios });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
-    }
-  },
+  }, //Verificado
 
   // Actualizar un permiso
   update: async (req, res) => {
@@ -58,7 +48,7 @@ const permisoController = {
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
     }
-  },
+  }, //Verificado
 
   // Eliminar un permiso
   delete: async (req, res) => {
@@ -72,7 +62,7 @@ const permisoController = {
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
     }
-  }
+  } //Verificado
 };
 
 module.exports = permisoController;

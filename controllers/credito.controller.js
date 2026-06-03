@@ -58,25 +58,26 @@ const getAllCreditos = catchError(async (req, res) => {
 
 const getDataDash = catchError(async (req, res) => {
   const Credito = CreditoModel(req.db);
-  const id = req.query;
-  if (id === "null") {
+  const { rutaId } = req.query;
+  console.log("Ruta ID recibida en el controlador:", rutaId); // Agrega este log para verificar el valor de rutaId
+  if (rutaId === "null") {
     return res.status(200).json([])
   } else {
-    const data = await Credito.getDataDash(id);
+    const data = await Credito.getDataDash(rutaId);
     return res.status(200).json(data);
   }
-});
+}); //Verificado
 
 const getDataDashBars = catchError(async (req, res) => {
   const Credito = CreditoModel(req.db);
-  const { id, q } = req.query;
-  if (id === 'null') {
+  const { rutaId, q } = req.query;
+  if (rutaId === 'null') {
     return res.status(200).json([])
   } else {
-    const data = await Credito.getDataDashBars(q, id);
+    const data = await Credito.getDataDashBars(q, rutaId);
     return res.status(200).json(data);
   }
-});
+}); //Verificado
 
 // Obtener un crédito por ID
 const getCreditoById = catchError(async (req, res) => {

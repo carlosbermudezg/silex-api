@@ -1,7 +1,5 @@
-const db = require('../config/db'); // Importa la conexión a la base de datos
-
-// Definir las consultas SQL
 module.exports = (db) => ({
+  //Crear un cliente
   create: async (clienteData, nacionalidad, userId) => {
     const {
       nombres,
@@ -29,11 +27,11 @@ module.exports = (db) => ({
 
       // 1️⃣ Insertar el cliente
       const insertClienteQuery = `
-        INSERT INTO clientes (nombres, telefono, direccion, "coordenadasCasa", "coordenadasCobro", identificacion, estado, "rutaId", nacionalidad, "userId_create", buro, updated, "createdAt", "updatedAt")
-        VALUES ($1, $2, $3, $4, $5, $6, 'activo', $7, $8, $9, 400, true, NOW(), NOW())
+        INSERT INTO clientes (nombres, telefono, direccion, "coordenadasCasa", "coordenadasCobro", identificacion, estado, "ruta_id", nacionalidad, "userId_create", buro, updated, "createdAt", "updatedAt", "public_id")
+        VALUES ($1, $2, $3, $4, $5, $6, 'activo', $7, $8, $9, 400, true, NOW(), NOW(), $10)
         RETURNING id;
       `;
-      const clienteValues = [nombres, telefono, direccion, coordenadasCasa, coordenadasCobro, identificacion, rutaId, nacionalidad[0], userId];
+      const clienteValues = [nombres, telefono, direccion, coordenadasCasa, coordenadasCobro, identificacion, rutaId, nacionalidad[0], userId, crypto.randomUUID()];
       const result = await db.query(insertClienteQuery, clienteValues);
       const clienteId = result.rows[0].id;
 
@@ -50,7 +48,7 @@ module.exports = (db) => ({
       }
 
       await db.query('COMMIT');
-      return { id: clienteId };
+      return { message: 'Cliente creado exitosamente' };
 
     } catch (error) {
       await db.query('ROLLBACK');
@@ -62,28 +60,7 @@ module.exports = (db) => ({
 
       throw error;
     }
-  },
-
-  update: async (id, updatedData) => {
-    const fields = Object.keys(updatedData);
-    const values = Object.values(updatedData);
-
-    if (fields.length === 0) {
-      throw new Error('No hay datos para actualizar');
-    }
-
-    const setClause = fields.map((field, index) => `"${field}" = $${index + 1}`).join(', ');
-
-    const queryText = `
-      UPDATE clientes
-      SET ${setClause}
-      WHERE id = $${fields.length + 1}
-      RETURNING *;
-    `;
-
-    const result = await db.query(queryText, [...values, id]);
-    return result.rows[0];
-  },
+  }, //Verificado
 
   // Obtener todos los registros con filtro de búsqueda y paginación
   getAll: async (limit, offset, searchTerm = '', oficinaId = null, rutaId = null, userId = null) => {
@@ -93,9 +70,9 @@ module.exports = (db) => ({
       SELECT 
         c.id, c.nombres, c.identificacion, c.nacionalidad, c.estado, c.telefono, c.direccion, 
         c."coordenadasCasa", c."coordenadasCobro", c.buro,
-        r.id AS ruta_id, r.nombre AS ruta_nombre
+        r.id AS ruta_id, r.nombre AS ruta_nombre, c."public_id"
       FROM clientes c
-      LEFT JOIN ruta r ON c."rutaId" = r.id
+      LEFT JOIN ruta r ON c."ruta_id" = r.id
     `;
 
     let params = [];
@@ -143,7 +120,7 @@ module.exports = (db) => ({
 
     // Filtro por ruta
     if (rutaId) {
-      filters.push(`c."rutaId" = $${params.length + 1}`);
+      filters.push(`c."ruta_id" = $${params.length + 1}`);
       params.push(rutaId);
     }
 
@@ -164,7 +141,7 @@ module.exports = (db) => ({
     // Conteo total sin paginación
     const countQueryText = `
       SELECT COUNT(*) FROM clientes c
-      LEFT JOIN ruta r ON c."rutaId" = r.id
+      LEFT JOIN ruta r ON c."ruta_id" = r.id
       ${filters.length ? 'WHERE ' + filters.join(' AND ') : ''}
     `;
     const countResult = await db.query(countQueryText, params.slice(0, -2));
@@ -172,21 +149,30 @@ module.exports = (db) => ({
     const total = Number(countResult.rows[0].count);
 
     return {
-      data: result.rows.map(({ ruta_id, ruta_nombre, ...cliente }) => ({
-        ...cliente,
-        ruta: ruta_id ? { id: ruta_id, nombre: ruta_nombre } : null
+      data: result.rows.map(cliente => ({
+        id: cliente.public_id,
+        nombres: cliente.nombres,
+        identificacion: cliente.identificacion,
+        nacionalidad: cliente.nacionalidad,
+        estado: cliente.estado,
+        telefono: cliente.telefono,
+        direccion: cliente.direccion,
+        coordenadasCasa: cliente.coordenadasCasa,
+        coordenadasCobro: cliente.coordenadasCobro,
+        buro: cliente.buro,
+        ruta: rutaId ? { id: cliente.ruta_id, nombre: cliente.ruta_nombre } : null
       })),
       total,
       page: Math.floor(offset / limit) + 1,
       limit,
       totalPages: Math.ceil(total / limit)
     };
-  },
+  }, //Verificado
 
   // Obtener un cliente por su ID
   getById: async (id) => {
     // 1. Obtener cliente
-    const clienteQuery = 'SELECT * FROM clientes WHERE id = $1;';
+    const clienteQuery = 'SELECT * FROM clientes WHERE "public_id" = $1;';
     const clienteResult = await db.query(clienteQuery, [id]);
     const cliente = clienteResult.rows[0];
 
@@ -194,12 +180,12 @@ module.exports = (db) => ({
 
     // 2. Obtener fotos
     const fotosQuery = 'SELECT foto FROM fotoclientes WHERE "clienteId" = $1;';
-    const fotosResult = await db.query(fotosQuery, [id]);
-    cliente.fotos = fotosResult.rows.map(row => row.foto);
+    const fotosResult = await db.query(fotosQuery, [cliente.id]);
+    const fotos = fotosResult.rows.map(row => row.foto);
 
     // 3. Obtener créditos
     const creditosQuery = 'SELECT * FROM creditos WHERE "clienteId" = $1;';
-    const creditosResult = await db.query(creditosQuery, [id]);
+    const creditosResult = await db.query(creditosQuery, [cliente.id]);
     const creditos = creditosResult.rows;
 
     // 4. Para cada crédito, obtener cuotas y pagos
@@ -221,169 +207,89 @@ module.exports = (db) => ({
 
     // 5. Adjuntar créditos al cliente
     cliente.creditos = creditos;
-
-    return cliente;
-  },
-
-  // Obtener un cliente por su ID
-  getNameById: async (id) => {
-    // 1. Obtener cliente
-    const clienteQuery = 'SELECT nombres FROM clientes WHERE id = $1;';
-    const clienteResult = await db.query(clienteQuery, [id]);
-    const cliente = clienteResult.rows[0];
-
-    if (!cliente) return null;
-
-    return cliente;
-  },
-
-  // Archivar un cliente (cambiar su estado a "archivado")
-  archive: async (id) => {
-    const queryText = 'UPDATE clientes SET estado = \'archivado\' WHERE id = $1 RETURNING *;';
-    const result = await db.query(queryText, [id]);
-    return result.rows[0]; // Devuelve el cliente archivado
-  },
-
-  // Obtener clientes por ruta con paginación y búsqueda solo por nombre
-  getByRutaId: async (page, rutaId, limit, offset, search) => {
-    const searchFilter = search ? `%${search}%` : null;
-
-    let queryText = `
-      SELECT * FROM clientes
-      WHERE "rutaId" = $1 AND estado != 'archivado'
-    `;
-    let queryParams = [rutaId];
-
-    if (search) {
-      queryText += ` AND nombres ILIKE $2`;
-      queryParams.push(searchFilter);
+    
+    const dataCliente ={
+      id: cliente.public_id,
+      nombres : cliente.nombres,
+      telefono : cliente.telefono,
+      direccion: cliente.direccion,
+      coordenadasCasa: cliente.coordenadasCasa,
+      coordenadasCobro: cliente.coordenadasCobro,
+      identificacion: cliente.identificacion,
+      createdAt: cliente.createdAt,
+      updatedAt: cliente.updatedAt,
+      rutaId: cliente.ruta_id,
+      nacionalidad: cliente.nacionalidad,
+      userId_create: cliente.userId_create,
+      estado: cliente.estado,
+      buro: cliente.buro,
+      updated: cliente.updated,
+      fotos: fotos,
+      creditos: creditos
     }
 
-    queryText += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
-    queryParams.push(limit, offset);
+    return dataCliente;
+  }, //Verificado
 
-    // Ejecutar la consulta de resultados
-    const result = await db.query(queryText, queryParams);
+  // Actualizar un cliente por su ID
+  update: async (id, updatedData) => {
+    // Eliminar campos que no deben actualizarse
+    delete updatedData.id;
+    delete updatedData.public_id;
+    delete updatedData.rutaId;
 
-    // Consulta para contar los registros totales
-    let countQuery = `
-      SELECT COUNT(*) FROM clientes
-      WHERE "rutaId" = $1 AND estado != 'archivado'
-    `;
-    let countParams = [rutaId];
+    const fields = Object.keys(updatedData);
+    const values = Object.values(updatedData);
 
-    if (search) {
-      countQuery += ` AND nombres ILIKE $2`;
-      countParams.push(searchFilter);
+    if (fields.length === 0) {
+      throw new Error('No hay datos para actualizar');
     }
 
-    const countResult = await db.query(countQuery, countParams);
-    const total = Number(countResult.rows[0].count);
+    const setClause = fields.map((field, index) => `"${field}" = $${index + 1}`).join(', ');
 
-    return {
-      data: result.rows,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit),
-    };
-  },
-
-  // Obtener clientes por ruta con paginación y búsqueda solo por nombre
-  getByRutaId2: async (rutaId) => {
-
-    let queryText = `
-      SELECT * FROM clientes
-      WHERE "rutaId" = $1 AND estado != 'archivado'
-    `;
-    let queryParams = [rutaId];
-
-    // Ejecutar la consulta de resultados
-    const result = await db.query(queryText, queryParams);
-
-    return result.rows
-  },
-
-  // Obtener todos los clientes de una oficina específica con paginación
-  getClientesByOficinaId: async (oficinaId = 1, page, limit, offset) => {
     const queryText = `
-      SELECT c.* 
-      FROM clientes c
-      JOIN ruta r ON r.id = c."rutaId"
-      JOIN oficinas o ON o.id = r."oficinaId"
-      WHERE o.id = $1 AND c.estado != 'archivado'
-      LIMIT $2 OFFSET $3;
+      UPDATE clientes
+      SET ${setClause}, "updatedAt" = NOW()
+      WHERE "public_id" = $${fields.length + 1}
+      RETURNING *;
     `;
-    const result = await db.query(queryText, [oficinaId, limit, offset]);
 
-    // Obtener el total de registros para cálculo de páginas
-    const countQuery = `
-      SELECT COUNT(*) 
-      FROM clientes c
-      JOIN ruta r ON r.id = c."rutaId"
-      JOIN oficinas o ON o.id = r."oficinaId"
-      WHERE o.id = $1 AND c.estado != 'archivado';
-    `;
-    const countResult = await db.query(countQuery, [oficinaId]);
-    const total = Number(countResult.rows[0].count);
+    const result = await db.query(queryText, [...values, id]);
+    
+    return result.rows[0];
+  }, //Verificado
 
-    return {
-      data: result.rows,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit)
-    };
-  },
+  delete: async (id) => {
+    // Buscar id interno a partir de public_id
+    const clienteRes = await db.query(`SELECT id FROM clientes WHERE "public_id" = $1`, [id]);
+    if (clienteRes.rows.length === 0) return null;
+    const clienteId = clienteRes.rows[0].id;
 
-  // 🔹 Buscar clientes por datos con paginación
-  search: async (query, page, limit, offset) => {
-    const searchQuery = `
-      SELECT * FROM clientes 
-      WHERE (LOWER(nombres) LIKE LOWER($1) 
-        OR LOWER(telefono) LIKE LOWER($1) 
-        OR LOWER(identificacion) LIKE LOWER($1)) 
-      AND estado != 'archivado'
-      LIMIT $2 OFFSET $3;
-    `;
-    const result = await db.query(searchQuery, [`%${query}%`, limit, offset]);
+    try {
+      await db.query('BEGIN');
 
-    // Total de registros
-    const countQuery = `
-      SELECT COUNT(*) FROM clientes 
-      WHERE (LOWER(nombres) LIKE LOWER($1) 
-        OR LOWER(telefono) LIKE LOWER($1) 
-        OR LOWER(identificacion) LIKE LOWER($1)) 
-      AND estado != 'archivado';
-    `;
-    const countResult = await db.query(countQuery, [`%${query}%`]);
-    const total = Number(countResult.rows[0].count);
+      // Verificar existencia de cualquier crédito (pagado o no)
+      const creditRes = await db.query(`SELECT COUNT(*) FROM creditos WHERE "clienteId" = $1`, [clienteId]);
+      const existingCredits = Number(creditRes.rows[0].count);
+      if (existingCredits > 0) {
+        await db.query('ROLLBACK');
+        throw { status: 400, message: 'El cliente tiene créditos asociados y no puede ser eliminado' };
+      }
 
-    return {
-      data: result.rows,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit) || 1,
-    };
-  },
+      // Eliminar fotos vinculadas
+      await db.query(`DELETE FROM fotoclientes WHERE "clienteId" = $1`, [clienteId]);
 
-  // 🔹 Obtener clientes archivados con paginación
-  getArchivedClientes: async (page, limit, offset) => {
-    const queryText = `SELECT * FROM clientes WHERE estado = 'archivado' LIMIT $1 OFFSET $2;`;
-    const result = await db.query(queryText, [limit, offset]);
+      // Eliminar registros en traslado_clientes
+      await db.query(`DELETE FROM traslado_clientes WHERE cliente_id = $1`, [clienteId]);
 
-    // Total de registros
-    const countQuery = `SELECT COUNT(*) FROM clientes WHERE estado = 'archivado';`;
-    const countResult = await db.query(countQuery);
-    const total = Number(countResult.rows[0].count);
+      // Eliminar cliente
+      const delRes = await db.query(`DELETE FROM clientes WHERE id = $1 RETURNING *`, [clienteId]);
 
-    return {
-      data: result.rows,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit) || 1,
-    };
-  },
+      await db.query('COMMIT');
+      return delRes.rows[0];
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    }
+  } // Por Verificar
 });

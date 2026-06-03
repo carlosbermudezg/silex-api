@@ -6,11 +6,8 @@ const catchError = require('../utils/catchError');
 const createRuta = catchError(async (req, res) => {
   try {
     const Ruta = RutaModel(req.db);
-    const Caja = CajaModel(req.db);
-    const ruta = await Ruta.create(req.body);
-    const caja = await Caja.create(0, ruta.id)
-    ruta.caja = caja
-    return res.status(201).json({ message: 'Ruta creada', data: ruta });
+    const data = await Ruta.create(req.body);
+    return res.status(201).json(data);
   } catch (error) {
     if (error.message.includes('Límite de rutas alcanzado')) {
       return res.status(403).json({ message: error.message });

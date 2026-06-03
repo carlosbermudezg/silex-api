@@ -1,75 +1,149 @@
 const bcrypt = require('bcrypt'); // Para comparar la contraseña
+const Permisos = require('./permiso');
 
 module.exports = (db) => ({
   // Crear un nuevo usuario
   create: async (usuarioData) => {
-    const { nombre, correo, contrasena, tipo, permisoId, securityCode, estado } = usuarioData;
+    const { nombre, correo, contrasena, tipo, permisoId, estado } = usuarioData;
+
+    // Buscar el id interno del permiso usando su public_id
+    let permisoIdInterno = null;
+    if (permisoId) {
+      const permisoQuery = `SELECT id FROM permisos WHERE public_id = $1;`;
+      const permisoResult = await db.query(permisoQuery, [permisoId]);
+      
+      if (permisoResult.rows.length === 0) {
+        throw new Error('El permiso especificado no existe');
+      }
+      permisoIdInterno = permisoResult.rows[0].id;
+    }
 
     // Encriptar la contraseña antes de guardarla
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(contrasena, saltRounds); // Encriptar la contraseña
 
-    // Encriptar el securityCode antes de guardarlo
-    const hashedSecurityCode = await bcrypt.hash(securityCode, saltRounds); // Encriptar el securityCode
-
     const queryText = `
-      INSERT INTO usuarios (nombre, correo, contrasena, "securityCode", tipo, "permisoId", estado, "createdAt", "updatedAt")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      INSERT INTO usuarios (nombre, correo, contrasena, tipo, "permisoId", estado, "createdAt", "updatedAt", "public_id")
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), $7)
       RETURNING *;
     `;
-    const values = [nombre, correo, hashedPassword, hashedSecurityCode, tipo, permisoId, estado];
+    const values = [nombre, correo, hashedPassword, tipo, permisoIdInterno, estado, crypto.randomUUID()];
     const result = await db.query(queryText, values);
-    return result.rows[0]; // Devuelve el usuario creado
-  },
+    return {
+      message: 'Usuario creado exitosamente',
+    };
+  }, //Verificado
 
-  // Obtener todos los usuarios con paginación
-  getAll: async (page, limit, offset) => {
-    const queryText = `
-      SELECT * FROM usuarios
-      WHERE estado != 'archivado'
-      LIMIT $1 OFFSET $2;
+  // Obtener todos los usuarios con paginación y busqueda
+  getAll: async (page, limit, offset, search) => {
+    let queryText = `
+      SELECT 
+        u.*,
+        p.id AS permiso_id,
+        p.nombre AS permiso_nombre,
+        p.public_id AS permiso_public_id
+      FROM usuarios u
+      LEFT JOIN permisos p ON u."permisoId" = p.id
+      WHERE 1=1
     `;
-    const result = await db.query(queryText, [limit, offset]);
+    let values = [limit, offset];
+
+    if (search && search.trim()) {
+      queryText += ` AND (u.nombre ILIKE $3 OR u.correo ILIKE $3 OR u.tipo::text ILIKE $3 OR u.estado::text ILIKE $3)`;
+      values.push(`%${search}%`);
+    }
+
+    queryText += ` LIMIT $1 OFFSET $2;`;
+    const result = await db.query(queryText, values);
 
     // Obtener el total de registros para cálculo de páginas
-    const countQuery = 'SELECT COUNT(*) FROM usuarios WHERE estado != \'archivado\';';
-    const countResult = await db.query(countQuery);
+    let countQuery = `SELECT COUNT(*) FROM usuarios`;
+    let countValues = [];
+
+    if (search && search.trim()) {
+      countQuery += ` WHERE nombre ILIKE $1 OR correo ILIKE $1 OR tipo::text ILIKE $1 OR estado::text ILIKE $1`;
+      countValues = [`%${search}%`];
+    }
+
+    countQuery += `;`;
+    const countResult = await db.query(countQuery, countValues);
     const total = Number(countResult.rows[0].count);
     const totalPages = total > 0 ? Math.ceil(Number(total) / Number(limit)) : 1;
 
+    const usuarios = result.rows.map((usuario) => ({
+      id: usuario.public_id,
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      tipo: usuario.tipo,
+      createdAt: usuario.createdAt,
+      updatedAt: usuario.updatedAt,
+      estado: usuario.estado,
+      permiso: usuario.permiso_id ? {
+        id: usuario.permiso_public_id,
+        nombre: usuario.permiso_nombre
+      } : null
+    }));
     return {
-      data: result.rows,
+      data: usuarios,
       total: total,
       page: Number(page),
       limit: Number(limit),
       totalPages: totalPages
     };
-  },
+  }, //Verificado
 
   // Obtener un usuario por su ID
   getById: async (id) => {
-    const queryText = 'SELECT * FROM usuarios WHERE id = $1 AND estado != \'archivado\';';
+    const queryText = `
+      SELECT 
+        u.*,
+        p.id AS permiso_id,
+        p.nombre AS permiso_nombre,
+        p.descripcion AS permiso_descripcion,
+        p.public_id AS permiso_public_id
+      FROM usuarios u
+      LEFT JOIN permisos p ON u."permisoId" = p.id
+      WHERE u.public_id = $1
+    `;
     const result = await db.query(queryText, [id]);
-    return result.rows[0]; // Devuelve el usuario encontrado
-  },
+    
+    if (result.rows.length === 0) return null;
 
-  // Archivar un usuario (cambiar su estado a "archivado")
-  archive: async (id) => {
-    const queryText = 'UPDATE usuarios SET estado = \'archivado\' WHERE id = $1 RETURNING *;';
-    const result = await db.query(queryText, [id]);
-    return result.rows[0]; // Devuelve el usuario archivado
-  },
+    const usuario = result.rows[0];
+    
+    const permiso = usuario.permiso_id ? {
+      id: usuario.permiso_public_id,
+      nombre: usuario.permiso_nombre
+    } : null;
 
-  // desarchivar un usuario (cambiar su estado a "activo")
-  desarchive: async (id) => {
-    const queryText = 'UPDATE usuarios SET estado = \'activo\' WHERE id = $1 RETURNING *;';
-    const result = await db.query(queryText, [id]);
-    return result.rows[0]; // Devuelve el usuario activo
-  },
+    return {
+      id: usuario.public_id,
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      tipo: usuario.tipo,
+      createdAt: usuario.createdAt,
+      updatedAt: usuario.updatedAt,
+      estado: usuario.estado,
+      permisoId: usuario.permisoId,
+      permiso: permiso
+    };
+  }, //Verificado
 
   // Editar un usuario por su ID
   edit: async (id, usuarioData) => {
-    const { nombre, correo, contrasena, securityCode, tipo, permisoId } = usuarioData;
+    const { nombre, correo, contrasena, tipo, estado, permisoId } = usuarioData;
+
+    // Buscar el id interno del permiso usando su public_id
+    let permisoIdInterno = null;
+    if (permisoId) {
+      const permisoQuery = `SELECT id FROM permisos WHERE public_id = $1;`;
+      const permisoResult = await db.query(permisoQuery, [permisoId]);
+      
+      if (permisoResult.rows.length === 0) {
+        throw new Error('El permiso especificado no existe');
+      }
+      permisoIdInterno = permisoResult.rows[0].id;
+    }
 
     let queryText;
     let values;
@@ -79,78 +153,28 @@ module.exports = (db) => ({
       const saltRounds = 10;
       const hashedPassword = await bcrypt.hash(contrasena, saltRounds); // Encriptar la nueva contraseña
 
-      if (securityCode) {
-        // Encriptar el nuevo securityCode si se proporciona uno
-        const hashedSecurityCode = await bcrypt.hash(securityCode, saltRounds); // Encriptar el securityCode
-
-        queryText = `
-          UPDATE usuarios 
-          SET nombre = $1, correo = $2, contrasena = $3, "securityCode" = $4, tipo = $5, "permisoId" = $6, "updatedAt" = NOW()
-          WHERE id = $7 RETURNING *;
-        `;
-        values = [nombre, correo, hashedPassword, hashedSecurityCode, tipo, permisoId, id];
-      } else {
-        queryText = `
-          UPDATE usuarios 
-          SET nombre = $1, correo = $2, contrasena = $3, tipo = $4, "permisoId" = $5, "updatedAt" = NOW()
-          WHERE id = $6 RETURNING *;
-        `;
-        values = [nombre, correo, hashedPassword, tipo, permisoId, id];
-      }
+      queryText = `
+        UPDATE usuarios 
+        SET nombre = $1, correo = $2, contrasena = $3, tipo = $4, "permisoId" = $5, estado = $6, "updatedAt" = NOW()
+        WHERE public_id = $7 RETURNING *;
+      `;
+      values = [nombre, correo, hashedPassword, tipo, permisoIdInterno, estado, id];
     } else {
       // Si no se proporciona nueva contraseña, solo actualizamos los demás campos
-      if (securityCode) {
-        // Encriptar el nuevo securityCode si se proporciona uno
-        const hashedSecurityCode = await bcrypt.hash(securityCode, saltRounds); // Encriptar el securityCode
-
-        queryText = `
-          UPDATE usuarios 
-          SET nombre = $1, correo = $2, "securityCode" = $3, tipo = $4, "permisoId" = $5, "updatedAt" = NOW()
-          WHERE id = $6 RETURNING *;
-        `;
-        values = [nombre, correo, hashedSecurityCode, tipo, permisoId, id];
-      } else {
-        queryText = `
-          UPDATE usuarios 
-          SET nombre = $1, correo = $2, tipo = $3, "permisoId" = $4, "updatedAt" = NOW()
-          WHERE id = $5 RETURNING *;
-        `;
-        values = [nombre, correo, tipo, permisoId, id];
-      }
+      queryText = `
+        UPDATE usuarios 
+        SET nombre = $1, correo = $2, tipo = $3, "permisoId" = $4, estado = $5, "updatedAt" = NOW()
+        WHERE public_id = $6 RETURNING *;
+      `;
+      values = [nombre, correo, tipo, permisoIdInterno, estado, id];
     }
 
     const result = await db.query(queryText, values);
-    return result.rows[0]; // Devuelve el usuario actualizado
-  },
-
-  //Buscar usuarios por datos
-  searchByData: async (searchTerm, page, limit, offset) => {
-
-    const queryText = `
-      SELECT * FROM usuarios
-      WHERE (LOWER(nombre) ILIKE LOWER($1) OR LOWER(correo) ILIKE LOWER($1) OR LOWER(estado) ILIKE LOWER($1))
-      ORDER BY id DESC
-      LIMIT $2 OFFSET $3;
-    `;
-    const result = await db.query(queryText, [`%${searchTerm}%`, limit, offset]);
-
-    const countQuery = `
-      SELECT COUNT(*) FROM usuarios
-      WHERE (LOWER(nombre) ILIKE LOWER($1) OR LOWER(correo) ILIKE LOWER($1) OR LOWER(estado) ILIKE LOWER($1));
-    `;
-    const countResult = await db.query(countQuery, [`%${searchTerm}%`]);
-
-    const total = Number(countResult.rows[0].count);
-    const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
-
-    return {
-      data: result.rows,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages
+    const data = {
+      message: 'Usuario actualizado exitosamente',
     };
-  },
+    return data; // Devuelve el usuario actualizado
+  }, //Verificado
 
   // Buscar usuarios por oficina a través de la ruta asignada
   getUsuariosByOficina: async (oficinaId, page, limit, offset) => {
@@ -184,7 +208,7 @@ module.exports = (db) => ({
     };
   },
 
-  // Obtener un usuario por su correo electrónico (u otro identificador único)
+  // Obtener un usuario por su correo electrónico
   getByEmail: async (email) => {
     try {
       const res = await db.query('SELECT * FROM usuarios WHERE correo = $1', [email]);
@@ -192,45 +216,11 @@ module.exports = (db) => ({
     } catch (error) {
       throw error;
     }
-  },
-
-  getByEmailUser: async (email) => {
-    try {
-      const query = `
-        SELECT 
-          u.*,
-          r.id AS ruta_id,
-          r.nombre AS ruta_nombre
-        FROM usuarios u
-        LEFT JOIN ruta r ON u.id = r."userId"
-        WHERE u.correo = $1
-      `;
-
-      const res = await db.query(query, [email]);
-
-      if (res.rows.length === 0) return null;
-
-      // Agrupar las rutas si hay más de una
-      const usuario = {
-        user: res.rows[0],
-        ruta: res.rows
-          .filter(row => row.ruta_id)
-          .map(row => ({
-            id: row.ruta_id,
-            nombre_ruta: row.ruta_nombre
-          }))
-      };
-
-      return usuario;
-
-    } catch (error) {
-      throw error;
-    }
-  },
+  }, //Usado en auth.controller para login @Verificado
 
   // Verificar que la contraseña es válida (comparando el hash)
   validatePassword: async (password, hashedPassword) => {
     return bcrypt.compare(password, hashedPassword); // Retorna true o false
-  },
+  }, //Usado en auth.controller para login @Verificado
 
 });

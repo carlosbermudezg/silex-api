@@ -2,35 +2,58 @@ const express = require('express');
 const router = express.Router();
 const clienteController = require('../controllers/cliente.controller');
 const verifyToken = require('../utils/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
+const allowPermissions = require('../middlewares/allowPermissions');
+const validateRuta = require('../middlewares/validateRuta');
 
-// Crear un cliente
-router.post('/', verifyToken, clienteController.createCliente);
+// Crear un cliente, todos los roles pueden crear clientes, pero se asignará la ruta desde el frontend dependiendo del rol
+router.post(
+    '/',
+    verifyToken,
+    allowRoles('administrador', 'administrador_oficina', 'cobrador'),
+    allowPermissions('addcl'),
+    validateRuta,
+    clienteController.createCliente
+); //Verificado
 
 // Obtener todos los clientes
-router.get('/', verifyToken, clienteController.getAllClientes);
-
-// Buscar clientes por datos con paginación
-router.get('/buscar', verifyToken, clienteController.searchClientes);
-
-// Obtener clientes archivados con paginación
-router.get('/archivados', verifyToken, clienteController.getArchivedClientes);
-
-// Obtener un cliente por ID
-router.get('/:id', verifyToken, clienteController.getClienteById);
+router.get(
+    '/',
+    verifyToken,
+    allowRoles('administrador', 'administrador_oficina', 'cobrador'),
+    allowPermissions('viewcl'),
+    validateRuta,
+    clienteController.getAllClientes
+); //Verificado
 
 // Editar un cliente
-router.put('/:id', verifyToken, clienteController.updateCliente);
+router.put(
+    '/',
+    verifyToken,
+    allowRoles('administrador', 'administrador_oficina', 'cobrador'),
+    allowPermissions('editcl'),
+    validateRuta,
+    clienteController.updateCliente
+); //Verificado
 
-// Archivar un cliente
-router.put('/:id/archive', verifyToken, clienteController.archiveCliente);
+// Obtener un cliente por ID
+router.get(
+    '/:id',
+    verifyToken,
+    allowRoles('administrador', 'administrador_oficina', 'cobrador'),
+    allowPermissions('viewcl'),
+    validateRuta,
+    clienteController.getClienteById
+); //Verificado
 
-// Obtener clientes por ruta
-router.get('/ruta-wo/:rutaId', verifyToken, clienteController.getClientesByRuta2);
-
-// Obtener clientes por ruta
-router.get('/ruta/:rutaId', verifyToken, clienteController.getClientesByRuta);
-
-// Obtener clientes por oficina
-router.get('/oficina/:oficinaId', verifyToken, clienteController.getClientesByOficina);
+//Eliminar un cliente
+router.delete(
+    '/',
+    verifyToken,
+    allowRoles('administrador', 'administrador_oficina'),
+    allowPermissions('archus'),
+    validateRuta,
+    clienteController.deleteCliente
+); // Verificado
 
 module.exports = router;

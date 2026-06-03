@@ -1,24 +1,53 @@
 const pool = require('../config/db');
 
 module.exports = async function dbMiddleware(req, res, next) {
-    const client = await pool.connect();
 
-    try {
-        // 🔐 forma segura
+  let client;
+  let released = false;
+
+  const cleanup = async () => {
+      if ( released || !client) {
+        return;
+      }
+      released = true;
+      try {
         await client.query(
-            'SELECT set_config($1, $2, false)',
-            ['search_path', req.schema]
+          'RESET search_path'
         );
-
-        req.db = client;
-
-        res.on('finish', () => {
-            client.release();
-        });
-
-        next();
-    } catch (err) {
+      } catch (err) {
+        console.error(
+          'Error resetting search_path:',
+          err
+        );
+      } finally {
         client.release();
-        next(err);
-    }
+      }
+    };
+
+  try {
+    client = await pool.connect();
+    // Configurar schema
+    await client.query(
+      `
+      SELECT pg_catalog.set_config(
+        $1,
+        $2,
+        false
+      )
+      `,
+      [
+        'search_path',
+        req.schema
+      ]
+    );
+    req.db = client;
+    // Liberar conexión
+    res.on('finish', cleanup);
+    // Si el cliente aborta
+    res.on('close', cleanup);
+    next();
+  } catch (err) {
+    await cleanup();
+    next(err);
+  }
 };

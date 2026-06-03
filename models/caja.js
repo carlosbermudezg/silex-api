@@ -124,18 +124,6 @@ module.exports = (db) => (Caja = {
     }
   },
 
-  // Crear una nueva caja
-  create: async (saldoActual, rutaId) => {
-    try {
-      const query = 'INSERT INTO cajas ("saldoActual", "rutaId", "createdAt", "updatedAt", estado) VALUES ($1, $2, NOW(), NOW(), $3) RETURNING *';
-      const values = [saldoActual, rutaId, 'cerrada'];
-      const res = await db.query(query, values);
-      return res.rows[0];
-    } catch (error) {
-      throw error;
-    }
-  },
-
   // Actualizar una caja
   update: async (id, saldoActual) => {
     try {
@@ -234,18 +222,28 @@ module.exports = (db) => (Caja = {
         [cajaId]
       );
 
-      montoFinal = montoFinal + caja?.rows[0]?.saldoActual
+      if (!caja || caja.rowCount === 0) {
+        await db.query('ROLLBACK');
+        throw new Error('Caja no encontrada');
+      }
+
+      montoFinal = montoFinal + (caja.rows[0].saldoActual || 0);
 
       // 1️⃣ Cerrar caja de la ruta
       await db.query(
         `UPDATE cajas SET estado = 'cerrada', "updatedAt" = NOW() WHERE id = $1`,
         [cajaId]
       );
-      //Cerrar el turno
-      await db.query(
-        `UPDATE turnos SET fecha_cierre = NOW(), monto_final = $1, observaciones_cierre = $2, usuario_close = $3 WHERE id = $4`,
-        [montoFinal, 'observacion de cierre', userId, turnoActual.rows[0].id]
-      );
+
+      // Cerrar el turno solo si existe uno abierto
+      if (turnoActual && turnoActual.rowCount > 0) {
+        await db.query(
+          `UPDATE turnos SET fecha_cierre = NOW(), monto_final = $1, observaciones_cierre = $2, usuario_close = $3 WHERE id = $4`,
+          [montoFinal, 'observacion de cierre', userId, turnoActual.rows[0].id]
+        );
+      } else {
+        console.warn(`CerrarCaja: no se encontró turno abierto para caja ${cajaId}, se actualizó solo el estado de la caja.`);
+      }
 
       await db.query('COMMIT');
 
