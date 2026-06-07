@@ -15,22 +15,25 @@ const swaggerUi = require('swagger-ui-express');
 
 app.use(cors());
 
-// Definir la configuración para Swagger (Documentación)
-const swaggerOptions = {
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'API de Prestamos',
-      version: '1.0.0',
-      description: 'Documentación de la API de Prestamos',
+// Swagger solo en desarrollo
+if (process.env.NODE_ENV === 'development') {
+  // Definir la configuración para Swagger (Documentación)
+  const swaggerOptions = {
+    definition: {
+      openapi: '3.0.0',
+      info: {
+        title: 'API de Prestamos',
+        version: '1.0.0',
+        description: 'Documentación de la API de Prestamos',
+      },
     },
-  },
-  apis: ['./routes/*.js'],
-};
-const swaggerDocs = swaggerJsdoc(swaggerOptions);
+    apis: ['./routes/*.js'],
+  };
+  const swaggerDocs = swaggerJsdoc(swaggerOptions);
 
-// Configurar la ruta para acceder a la documentación de Swagger
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+  // Configurar la ruta para acceder a la documentación de Swagger
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+}
 //Fin de la documentación
 
 app.use(helmet({

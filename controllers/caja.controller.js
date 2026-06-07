@@ -8,203 +8,87 @@ const QRCode = require('qrcode');
 // Función para obtener todas las cajas
 const getAllCajas = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
-  const cajas = await Caja.getAll();
-  return res.status(200).json(cajas);
-});
-
-// Función para obtener una caja por su ID
-const getCajaById = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const caja = await Caja.getById(id);
-
-  if (!caja) {
-    return res.status(404).json({ message: 'Caja no encontrada' });
-  }
-
-  return res.status(200).json(caja);
-});
-
-// Función para obtener una caja por su ID
-const getTurno = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const caja = await Caja.getTurnoById(id);
-  if (!caja) {
-    return res.status(404).json({ message: 'No hay un turno activo' });
-  }
-
-  return res.status(200).json(caja);
-});
-
-// Función para obtener una caja por su ID
-const getCajaByUserId = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const caja = await Caja.getByUserId(id);
-
-  if (!caja) {
-    return res.status(404).json({ message: 'Caja no encontrada' });
-  }
-
-  return res.status(200).json(caja);
-});
-
-// Función para obtener una caja por su ID
-const getCajaByRutaId = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const caja = await Caja.getByRutaId(id);
-
-  if (!caja) {
-    return res.status(404).json({ message: 'Caja no encontrada' });
-  }
-
-  return res.status(200).json(caja);
-});
-
-// Función para actualizar el saldo de una caja
-const updateCaja = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const { saldoActual } = req.body;
-
-  const caja = await Caja.update(id, saldoActual);
-
-  if (!caja) {
-    return res.status(404).json({ message: 'Caja no encontrada' });
-  }
-
-  return res.status(200).json(caja);
-});
-
-// Función para eliminar una caja (en este caso, la marcamos como inactiva)
-const deleteCaja = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-
-  const deletedRows = await Caja.delete(id);
-
-  if (deletedRows === 0) {
-    return res.status(404).json({ message: 'Caja no encontrada' });
-  }
-
-  return res.status(204).json();
-});
-
-// Función para agregar saldo a la caja de un usuario
-const agregarSaldo = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { rutaId, monto, adminId } = req.body;
+  const { page = 1, limit = 10, search = '' } = req.query;
+  const offset = (page - 1) * limit;
   try {
-    // Llamar a la función del modelo para agregar saldo
-    const resultado = await Caja.agregarSaldo(adminId, rutaId, monto);
-
-    return res.status(200).json({
-      message: resultado.message,
-      nuevoSaldoUsuario: resultado.nuevoSaldoUsuario,
-      nuevoSaldoAdmin: resultado.nuevoSaldoAdmin,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Asignar saldo a un administrador de oficina
-const asignarSaldoAOficina = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { adminId, oficinaAdminId, monto } = req.body;
-
-  try {
-    const resultado = await Caja.asignarSaldoAOficina(adminId, oficinaAdminId, monto);
-    return res.status(200).json({ message: resultado.message, saldoActual: resultado.nuevoSaldoOficina });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-
-});
-
-// Endpoint: cierre de caja
-const cerrarCaja = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { userId } = req.user;
-  const { cajaId } = req.body
-
-  if (!userId || !cajaId === undefined) {
-    return res.status(400).json({ message: 'Faltan datos necesarios.' });
-  }
-
-  const resultado = await Caja.cerrarCaja(cajaId, userId);
-  return res.status(200).json({ success: true, ...resultado });
-});
-
-// Endpoint: cierre de caja
-const bloquearCaja = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { cajaId, estado } = req.body;
-
-  if (!cajaId === undefined) {
-    return res.status(400).json({ message: 'Faltan datos necesarios.' });
-  }
-
-  const resultado = await Caja.bloquearCaja(cajaId, estado);
-  return res.status(200).json({ success: true, ...resultado });
-});
-
-const abrirCaja = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { cajaId } = req.body;
-  const { userId } = req.user;
-
-  if (cajaId === undefined) {
-    return res.status(400).json({ message: 'Faltan datos necesarios.' });
-  }
-
-  const resultado = await Caja.abrirCaja(cajaId, userId);
-
-  if (!resultado.success) {
-    return res.status(400).json({ success: false, message: resultado.message });
-  }
-
-  return res.status(200).json({ success: true, message: resultado.message });
-});
-
-const getMovimientosByTurno = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  try {
-    const { turnoId, page = 1, limit = 10 } = req.query;
-
-    if (!turnoId) {
-      return res.status(400).json({ success: false, message: 'Faltan parámetros requeridos' });
-    }
-
-    const offset = (page - 1) * limit;
-
-    const result = await Caja.getMovimientosByTurno(
-      turnoId,
+    const result = await Caja.getAll(
       parseInt(limit),
-      parseInt(offset)
+      parseInt(offset),
+      search,
+      req.oficinaId || null
     );
-
+    if (!result) {
+      return res.status(404).json({ message: 'Cajas no encontradas' });
+    }
     return res.status(200).json({
       success: true,
-      message: 'Movimientos obtenidos correctamente',
-      data: result.data,
+      message: 'Cajas obtenidas correctamente',
+      data: result.cajas,
       total: result.total,
-      page: Number(page),
+      page: result.page,
       totalPages: result.totalPages
     });
-
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, message: 'Error del servidor', error: error.message });
+    console.log(error)
+    return res.status(500).json({ success: false, message: 'Error al obtener cajas', error: error.message });
   }
-});
+}); //Verificado
+
+// Función para obtener una caja por su ID de ruta
+const getCajaByRutaId = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
+  const id = req.rutaId;
+  const { page = 1, limit = 10 } = req.query;
+  const offset = (page - 1) * limit;
+
+  try {
+    const caja = await Caja.getById(id, parseInt(limit), parseInt(offset));
+    if (!caja) {
+      return res.status(404).json({ message: 'Caja no encontrada' });
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Caja obtenida correctamente',
+      data: caja
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Error al obtener la caja', error: error.message });
+  }
+}); // Verificado
+
+const crearIngreso = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
+  const { descripcion, monto, ingresoCategoryId } = req.body;
+  const { userId } = req.user;
+  const rutaId = req.rutaId;
+  const idempotencyKey = req.headers['idempotency-key'];
+
+  if (!descripcion || !monto || !ingresoCategoryId) {
+    return res.status(400).json({ error: 'Faltan campos requeridos' });
+  }
+
+  try {
+    const ingreso = await Caja.createIngreso({
+      descripcion,
+      monto,
+      ingresoCategoryId,
+      userId: userId, //Usuario que crea la transacción
+      rutaId: rutaId, //Id de la ruta a la que pertenece la transacción
+      idempotencyKey
+    });
+
+    return res.status(201).json({ success: true, data: ingreso });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}); //Verificado
 
 const crearEgreso = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
-  const { descripcion, monto, gastoCategoryId, foto, turnoId } = req.body;
-  const { role, userId } = req.user;
+  const { descripcion, monto, gastoCategoryId, foto } = req.body;
+  const { userId, role } = req.user;
+  const rutaId = req.rutaId;
+  const idempotencyKey = req.headers['idempotency-key'];
 
   if (!descripcion || !monto || !gastoCategoryId) {
     return res.status(400).json({ error: 'Faltan campos requeridos' });
@@ -215,9 +99,11 @@ const crearEgreso = catchError(async (req, res) => {
       descripcion,
       monto,
       gastoCategoryId,
-      userRole: role,
       userId: userId,
-      foto: foto
+      userRole: role,
+      foto: foto,
+      rutaId: rutaId,
+      idempotencyKey
     });
 
     return res.status(201).json({ success: true, data: egreso });
@@ -227,67 +113,18 @@ const crearEgreso = catchError(async (req, res) => {
   }
 });
 
-const crearEgresoAdm = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { descripcion, monto, gastoCategoryId, cajaId, turnoId } = req.body;
-  const { userId } = req.user;
-
-  if (!descripcion || !monto || !gastoCategoryId || !turnoId) {
-    return res.status(400).json({ error: 'Faltan campos requeridos' });
-  }
-
-  try {
-    const egreso = await Caja.createEgresoAdm({
-      descripcion,
-      monto,
-      cajaId,
-      gastoCategoryId,
-      aprovedId: userId,
-      turnoId: turnoId
-    });
-
-    return res.status(201).json({ success: true, data: egreso });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-const crearIngresoAdm = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { descripcion, monto, ingresoCategoryId, cajaId, turnoId } = req.body;
-  const { userId } = req.user;
-
-  if (!descripcion || !monto || !ingresoCategoryId || !turnoId) {
-    return res.status(400).json({ error: 'Faltan campos requeridos' });
-  }
-
-  try {
-    const ingreso = await Caja.createIngresoAdm({
-      descripcion,
-      monto,
-      cajaId,
-      ingresoCategoryId,
-      aprovedId: userId,
-      turnoId: turnoId
-    });
-
-    return res.status(201).json({ success: true, data: ingreso });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
-});
-
 const aprobarEgreso = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
   const { id } = req.params;
   const { role, userId } = req.user;
+  const idempotencyKey = req.headers['idempotency-key'];
 
   if (!['administrador', 'administrador_oficina'].includes(role)) {
     return res.status(403).json({ error: 'No tienes permisos para aprobar egresos' });
   }
 
   try {
-    const result = await Caja.aprobarEgreso(id, userId);
+    const result = await Caja.aprobarEgreso(id, userId, idempotencyKey);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -298,133 +135,55 @@ const rechazarEgreso = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
   const { id } = req.params;
   const { role, userId } = req.user;
+  const idempotencyKey = req.headers['idempotency-key'];
 
   if (!['administrador', 'administrador_oficina'].includes(role)) {
     return res.status(403).json({ error: 'No tienes permisos para rechazar egresos' });
   }
 
   try {
-    const result = await Caja.rechazarEgreso(id, userId);
+    const result = await Caja.rechazarEgreso(id, userId, idempotencyKey);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
+});
+
+const createPago = catchError(async (req, res) => {
+  const Credito = CreditoModel(req.db);
+  const { creditoId, valor, metodoPago, location } = req.body;
+  const userId = req.user.userId;
+
+  if (!creditoId || !metodoPago) {
+    return res.status(400).json({ error: "Todos los campos son requeridos" });
+  }
+
+  if (valor < 0 || isNaN(valor)) {
+    return res.status(400).json({ error: "Todos los campos son requeridos" });
+  }
+
+  // Llamamos a la función createPago del modelo que ahora maneja toda la lógica con transacciones
+  const resultado = await Credito.createPago({ creditoId, valor, metodoPago, userId, location });
+  if (resultado.error) return res.status(404).json({ error: resultado.error });
+
+  return res.status(201).json({
+    message: resultado.message,
+    pagoId: resultado.pagoId
+  });
 });
 
 const anularAbono = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
   const { id, motivo } = req.body;
   const { userId } = req.user;
+  const idempotencyKey = req.headers['idempotency-key'];
 
   try {
-    const result = await Caja.anularPago(id, userId, motivo);
+    const result = await Caja.anularPago(id, userId, motivo, idempotencyKey);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
-});
-
-const listarEgresos = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const cajaId = req.user.cajaId;
-
-  const filtros = {
-    desde: req.query.desde,
-    hasta: req.query.hasta,
-    estado: req.query.estado,
-    gastoCategoryId: req.query.gastoCategoryId,
-    cobrador: req.query.cobrador
-  };
-
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-
-  const data = await Caja.listarEgresos(cajaId, filtros, page, limit);
-  return res.status(200).json(data);
-});
-
-// Función para obtener los egresos listados por id de turno
-const getOpenTurnos = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { page = 1, limit = 10, search = '' } = req.query;
-  const offset = (page - 1) * limit;
-  const result = await Caja.getOpenTurnos(limit, offset, search);
-
-  if (!result) {
-    return res.status(404).json({ message: 'No hay cajas disponibles' });
-  }
-
-  return res.status(200).json({
-    success: true,
-    message: 'Cajas obtenidas correctamente',
-    data: result,
-    total: result.total,
-    page: result.page,
-    totalPages: result.totalPages
-  });
-});
-
-// Función para obtener los egresos listados por id de turno
-const getEgresosByTurno = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const { page = 1, limit = 10 } = req.query;
-  const offset = (page - 1) * limit;
-  const result = await Caja.getEgresosByTurno(id, limit, offset);
-
-  if (!result) {
-    return res.status(404).json({ message: 'No hay egresos disponibles' });
-  }
-
-  return res.status(200).json({
-    success: true,
-    message: 'Egresos obtenidos correctamente',
-    data: result.data,
-    total: result.total,
-    page: Number(page),
-    totalPages: result.totalPages
-  });
-});
-
-// Función para obtener los egresos listados por id de turno
-const getAbonosByTurno = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const { limit = 10, page = 1 } = req.query
-  const offset = (page - 1) * limit;
-  const abonos = await Caja.getAbonosByTurno(id, limit, offset);
-
-  if (!abonos) {
-    return res.status(404).json({ message: 'No hay abonos disponibles' });
-  }
-  return res.status(200).json({
-    success: true,
-    message: 'Abonos obtenidos correctamente',
-    data: abonos.data,
-    total: abonos.total,
-    page: Number(page),
-    totalPages: abonos.totalPages
-  });
-});
-
-const getValidAbonosByTurno = catchError(async (req, res) => {
-  const Caja = CajaModel(req.db);
-  const { id } = req.params;
-  const { limit = 10, page = 1 } = req.query
-  const offset = (page - 1) * limit;
-  const abonos = await Caja.getValidAbonosByTurno(id, limit, offset);
-
-  if (!abonos) {
-    return res.status(404).json({ message: 'No hay abonos disponibles' });
-  }
-  return res.status(200).json({
-    success: true,
-    message: 'Abonos obtenidos correctamente',
-    data: abonos.data,
-    total: abonos.total,
-    page: Number(page),
-    totalPages: abonos.totalPages
-  });
 });
 
 // Función para obtener comprobante por id pdf
@@ -534,60 +293,61 @@ const getComprobanteById = catchError(async (req, res) => {
   doc.end();
 });
 
-const getAllEgresos = catchError(async (req, res) => {
+// Endpoint: apertura de caja
+const abrirCaja = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
-  const authUserId = req.user.userId; // Este es el usuario autenticado (quien hace la petición)
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
-  const oficinaId = req.query.oficinaId ? parseInt(req.query.oficinaId) : null;
-  const rutaId = req.query.rutaId ? parseInt(req.query.rutaId) : null;
-  const searchTerm = req.query.searchTerm || '';
-  const fechaInicio = req.query.fechaInicio || '';
-  const fechaFin = req.query.fechaFin || '';
+  const rutaId = req.rutaId;
+  const { userId } = req.user;
+  const idempotencyKey = req.headers['idempotency-key'];
+  try {
+    const resultado = await Caja.abrirCaja(rutaId, userId, false, idempotencyKey);
+    return res.status(200).json({ success: true, message: resultado.message });
+  }
+  catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}); //Verificado
 
-  // Pasamos el ID del usuario autenticado para que el modelo resuelva sus oficinas y rutas
-  const data = await Caja.getAllEgresos(offset, limit, authUserId, oficinaId, rutaId, searchTerm, fechaInicio, fechaFin);
-
-  return res.status(200).json(data);
-});
-
-const getEgresosDia = catchError(async (req, res) => {
+// Endpoint: cierre de caja
+const cerrarCaja = catchError(async (req, res) => {
   const Caja = CajaModel(req.db);
-  const page = parseInt(req.query.page) || 1;
-  const pageSize = parseInt(req.query.limit) || 10;
-  const search = req.query.search || "";
+  const { userId } = req.user;
+  const rutaId = req.rutaId;
+  const { observaciones } = req.body;
+  const idempotencyKey = req.headers['idempotency-key'];
+  try {
+    const resultado = await Caja.cerrarCaja(rutaId, userId, observaciones, idempotencyKey);
+    return res.status(200).json({ success: true, ...resultado });
+  }
+  catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}); //Verificado
 
-  const egresos = await Caja.getEgresosDia(req.user.userId, page, pageSize, search);
-  return res.status(200).json(egresos);
-});
+// Endpoint: bloqueo de caja
+const bloquearCaja = catchError(async (req, res) => {
+  const Caja = CajaModel(req.db);
+  const rutaId = req.rutaId;
+  try {
+    const resultado = await Caja.bloquearCaja(rutaId);
+    return res.status(200).json({ success: true, message: resultado.message });
+  }
+  catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}); //Verificado
 
 module.exports = {
   getAllCajas,
-  getCajaById,
-  getTurno,
-  updateCaja,
-  deleteCaja,
-  agregarSaldo,
-  asignarSaldoAOficina,
-  cerrarCaja,
-  getCajaByUserId,
   getCajaByRutaId,
-  getMovimientosByTurno,
+  crearIngreso,
   crearEgreso,
-  crearEgresoAdm,
-  crearIngresoAdm,
   aprobarEgreso,
   rechazarEgreso,
-  listarEgresos,
-  getEgresosByTurno,
-  getEgresosDia,
-  getAllEgresos,
-  bloquearCaja,
   abrirCaja,
-  getAbonosByTurno,
+  bloquearCaja,
+  cerrarCaja,
+  createPago,
   anularAbono,
-  getValidAbonosByTurno,
-  getComprobanteById,
-  getOpenTurnos
+  getComprobanteById
 };

@@ -7,112 +7,59 @@ const createOficina = catchError(async (req, res) => {
   const { nombre, direccion, telefono, userId } = req.body;
   const oficina = await Oficina.create({ nombre, direccion, telefono, userId });
   return res.status(201).json({ data: oficina });
-});
+}); //Verificado
 
-// Obtener todas las oficinas con sus rutas
+// Obtener todas las oficinas con paginacion y busqueda
 const getAll = catchError(async (req, res) => {
   const Oficina = OficinaModel(req.db);
-  const { role } = req.user;
+  const { search } = req.query;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const offset = (page - 1) * limit;
 
-  // Validar rol
-  if (role !== 'administrador' && role !== 'administrador_oficina') {
-    return res.status(403).json({ message: 'No tiene permisos para acceder a esta información.' });
-  }
-
-  const oficinas = await Oficina.getAllWithRutas();
+  const oficinas = await Oficina.getAll(page, limit, offset, search);
 
   return res.status(200).json(oficinas);
-});
+}); //Verificado
 
-// Obtener todas las oficinas con sus rutas
+// Obtener todas las oficinas (se obtendrá según el rol del usuario)
+// Si es administrador, se obtendrán todas las oficinas, 
+// si es administrador_oficina, se obtendrá solo la oficina asociada al usuario
+// Sin paginación
 const getAllOficinas = catchError(async (req, res) => {
   const Oficina = OficinaModel(req.db);
-  const { page = 1, limit = 10 } = req.query;
-  const offset = (page - 1) * parseInt(limit);
-
-  const { role } = req.user;
-
-  // Validar rol
-  if (role !== 'administrador' && role !== 'administrador_oficina') {
-    return res.status(403).json({ message: 'No tiene permisos para acceder a esta información.' });
-  }
-
-  const oficinas = await Oficina.getAllOficinas(page, limit, offset, role);
-
+  const { role, userId } = req.user;
+  const oficinas = await Oficina.getAllOficinas(role, userId);
   return res.status(200).json({ data: oficinas });
-});
+}); //Verificado
 
-// Obtener todas las oficinas con sus rutas
-const getAllOficinasByUser = catchError(async (req, res) => {
-  const Oficina = OficinaModel(req.db);
-  const { page = 1, limit = 10 } = req.query;
-  const offset = (page - 1) * parseInt(limit);
-
-  const { userId, role } = req.user;
-
-  // Validar rol
-  if (role !== 'administrador' && role !== 'administrador_oficina') {
-    return res.status(403).json({ message: 'No tiene permisos para acceder a esta información.' });
-  }
-
-  const oficinas = await Oficina.getAll(page, limit, offset, role, userId);
-
-  return res.status(200).json({ data: oficinas });
-});
-
-// Obtener una oficina por ID con rutas
+// Obtener una oficina por public_id
 const getOficinaById = catchError(async (req, res) => {
   const Oficina = OficinaModel(req.db);
   const oficina = await Oficina.getById(req.params.id);
   if (!oficina) return res.status(404).json({ message: 'Oficina no encontrada' });
   return res.status(200).json({ data: oficina });
-});
+}); //Verificado
 
 // Actualizar una oficina y sus rutas
 const updateOficina = catchError(async (req, res) => {
   const Oficina = OficinaModel(req.db);
   const oficina = await Oficina.update(req.params.id, req.body);
-  return res.status(200).json({ message: 'Oficina actualizada', data: oficina });
-});
-
-//Buscar oficina por nombre
-const searchByName = catchError(async (req, res) => {
-  const Oficina = OficinaModel(req.db);
-  const { searchTerm, page = 1, limit = 10 } = req.query;
-  const offset = (page - 1) * parseInt(limit);
-
-  const oficinas = await Oficina.searchByName(searchTerm, page, limit, offset);
-
-  return res.status(200).json(oficinas);
-});
+  return res.status(200).json({ data: oficina });
+}); //Verificado
 
 const deleteOficina = catchError(async (req, res) => {
   const Oficina = OficinaModel(req.db);
   const { id } = req.params;
-
-  // Verificar si hay rutas asociadas
-  const tieneRutas = await Oficina.hasRutas(id);
-  if (tieneRutas) {
-    return res.status(400).json({
-      error: "No se puede eliminar la oficina porque tiene rutas asociadas."
-    });
-  }
-
-  // Eliminar relaciones en usuariooficinas
-  await Oficina.removeUserRelations(id);
-
-  // Eliminar la oficina
   const result = await Oficina.delete(id);
   return res.status(200).json(result);
-});
+}); //Verificado
 
 module.exports = {
   createOficina,
   getAllOficinas,
-  getAllOficinasByUser,
   getOficinaById,
   updateOficina,
   deleteOficina,
-  searchByName,
   getAll
 };

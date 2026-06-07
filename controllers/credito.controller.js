@@ -59,7 +59,6 @@ const getAllCreditos = catchError(async (req, res) => {
 const getDataDash = catchError(async (req, res) => {
   const Credito = CreditoModel(req.db);
   const { rutaId } = req.query;
-  console.log("Ruta ID recibida en el controlador:", rutaId); // Agrega este log para verificar el valor de rutaId
   if (rutaId === "null") {
     return res.status(200).json([])
   } else {
@@ -114,29 +113,6 @@ const getCreditosImpagos = catchError(async (req, res) => {
   });
 });
 
-const createPago = catchError(async (req, res) => {
-  const Credito = CreditoModel(req.db);
-  const { creditoId, valor, metodoPago, location } = req.body;
-  const userId = req.user.userId;
-
-  if (!creditoId || !metodoPago) {
-    return res.status(400).json({ error: "Todos los campos son requeridos" });
-  }
-
-  if (valor < 0 || isNaN(valor)) {
-    return res.status(400).json({ error: "Todos los campos son requeridos" });
-  }
-
-  // Llamamos a la función createPago del modelo que ahora maneja toda la lógica con transacciones
-  const resultado = await Credito.createPago({ creditoId, valor, metodoPago, userId, location });
-  if (resultado.error) return res.status(404).json({ error: resultado.error });
-
-  return res.status(201).json({
-    message: resultado.message,
-    pagoId: resultado.pagoId
-  });
-});
-
 // Actualizar un crédito
 const updateCredito = catchError(async (req, res) => {
   const Credito = CreditoModel(req.db);
@@ -162,7 +138,6 @@ module.exports = {
   updateCredito,
   deleteCredito,
   getCreditosImpagos,
-  createPago,
   getDataDash,
   getDataDashBars
 };

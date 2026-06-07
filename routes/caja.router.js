@@ -3,59 +3,87 @@ const router = express.Router();
 const CajaController = require('../controllers/caja.controller');
 const verifyToken = require('../utils/verifyToken');
 const allowRoles = require('../middlewares/allowRoles');
+const allowPermissions = require('../middlewares/allowPermissions');
+const validateRuta = require('../middlewares/validateRuta');
+const validateOficina = require('../middlewares/validateOficina');
 
-// Ruta para obtener los egresos (endpoint administracion)
-//verificar si se usa esta ruta
+// Ruta para obtener todas las cajas con paginación, búsqueda y filtro por oficina
 router.get(
-    '/allegresos', 
-    verifyToken, 
+    '/',
+    verifyToken,
     allowRoles("administrador", "administrador_oficina"),
-    CajaController.getAllEgresos
-);
+    allowPermissions('viewcj'),
+    validateOficina,
+    CajaController.getAllCajas
+); //Verificado
 
-// Ruta para agregar saldo a la caja de un usuario
-router.post('/addsaldo', verifyToken, CajaController.agregarSaldo);
-// Ruta para asignar saldo a administrador de oficina
-router.post('/asignar-saldo-oficina', verifyToken, CajaController.asignarSaldoAOficina);
+// Ruta para obtener caja por rutaId con sus movimientos paginados
+router.get(
+    '/ruta',
+    verifyToken,
+    allowRoles("administrador", "administrador_oficina", "cobrador"),
+    allowPermissions('viewcj'),
+    validateRuta,
+    CajaController.getCajaByRutaId
+); //Verificado
+
+// Ruta para registrar ingreso
+router.post(
+    '/ingreso/:rutaId',
+    verifyToken,
+    allowRoles("administrador", "administrador_oficina"),
+    allowPermissions('addin'),
+    validateRuta,
+    CajaController.crearIngreso
+); //Verificado
+
 // Ruta para registrar egreso
-router.post('/egreso', verifyToken, CajaController.crearEgreso);
-// Ruta para registrar egreso Adm
-router.post('/egreso-out', verifyToken, CajaController.crearEgresoAdm);
-// Ruta para registrar ingreso Adm
-router.post('/ingreso', verifyToken, CajaController.crearIngresoAdm);
-// Ruta para obtener egresos del dia por usuario
-router.get('/turnos-abiertos', verifyToken, CajaController.getOpenTurnos);
-// Ruta para obtener egresos del dia por usuario
-router.get('/egresos-dia', verifyToken, CajaController.getEgresosDia);
-//Obtener egresos por turno
-router.get('/egresos-turno/:id', verifyToken, CajaController.getEgresosByTurno);
+router.post(
+    '/egreso/:rutaId',
+    verifyToken,
+    allowRoles("administrador", "administrador_oficina", "cobrador"),
+    allowPermissions('addeg'),
+    validateRuta,
+    CajaController.crearEgreso
+); //Verificado
+
 //Obtener comprobante por id
 router.get('/comprobante/:id', verifyToken, CajaController.getComprobanteById);
-//Obtener abonos por turno
-router.get('/abonos-turno/:id', verifyToken, CajaController.getAbonosByTurno);
-//Obtener abonos validos por turno
-router.get('/abonosValid-turno/:id', verifyToken, CajaController.getValidAbonosByTurno);
 //Ruta para aprobar egreso
 router.put('/aprobar-egreso/:id', verifyToken, CajaController.aprobarEgreso);
 //Ruta para rechazar un egreso
 router.put('/rechazar-egreso/:id', verifyToken, CajaController.rechazarEgreso);
 //Ruta para anular un abono
 router.post('/anular-abono', verifyToken, CajaController.anularAbono);
+
 //Ruta para cerrar caja
-router.post('/cerrar-caja', verifyToken, CajaController.cerrarCaja);
-//Ruta para cerrar caja
-router.post('/bloquear-caja', verifyToken, CajaController.bloquearCaja);
+router.post(
+    '/cerrar-caja/:rutaId',
+    verifyToken,
+    allowRoles("administrador", "administrador_oficina"),
+    allowPermissions('cerrarcj'),
+    validateRuta,
+    CajaController.cerrarCaja
+); //Verificado
+
+//Ruta para bloquear caja
+router.post(
+    '/bloquear-caja/:rutaId',
+    verifyToken,
+    allowRoles("administrador", "administrador_oficina"),
+    allowPermissions('bloqcj'),
+    validateRuta,
+    CajaController.bloquearCaja
+); //Verificado
+
 //Ruta para abrir caja
-router.post('/abrir-caja', verifyToken, CajaController.abrirCaja);
-//Ruta para obtener turno por id de caja
-router.get('/turno/:id', verifyToken, CajaController.getTurno);
-// Ruta para obtener movimientos por caja id
-router.get('/movimientos', verifyToken, CajaController.getMovimientosByTurno);
-// Ruta para obtener caja por id de usuario
-router.get('/user/:id', verifyToken, CajaController.getCajaByUserId);
-// Ruta para obtener caja por id de ruta
-router.get('/ruta/:id', verifyToken, CajaController.getCajaByRutaId);
-// Ruta para obtener caja por id
-router.get('/:id', verifyToken, CajaController.getCajaById);
+router.post(
+    '/abrir-caja/:rutaId',
+    verifyToken,
+    allowRoles("administrador", "administrador_oficina"),
+    allowPermissions('opencj'),
+    validateRuta,
+    CajaController.abrirCaja
+); //Verificado
 
 module.exports = router;

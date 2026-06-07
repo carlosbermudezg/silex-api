@@ -3,360 +3,228 @@ const db = require('../config/db');
 module.exports = (db) => ({
   //Crear una nueva oficina
   create: async (oficinaData) => {
-    // Insertar la oficina
-    const queryText = `
-      INSERT INTO oficinas (nombre, direccion, telefono, "createdAt", "updatedAt")
-      VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *;
-    `;
-    const values = [oficinaData.nombre, oficinaData.direccion, oficinaData.telefono];
-    const { rows } = await db.query(queryText, values);
-    const oficina = rows[0];
+    try {
+      await db.query('BEGIN');
 
-    // Insertar relación en usuariooficinas si hay un userId
-    if (oficinaData.userId) {
-      await db.query(
-        `INSERT INTO usuariooficinas ("usuarioId", "oficinaId", "createdAt", "updatedAt") VALUES ($1, $2, NOW(), NOW());`,
-        [oficinaData.userId, oficina.id]
-      );
-    }
-
-    return oficina;
-  },
-
-  // Obtener todas las oficinas con rutas
-  getAllWithRutas: async () => {
-
-    const queryText = `
-      SELECT 
-        o.*, 
-        r.id AS "rutaId", 
-        r.nombre AS "rutaNombre"
-      FROM oficinas o
-      LEFT JOIN ruta r ON o.id = r."oficinaId"
-      ORDER BY o."createdAt" DESC;
-    `;
-
-    const { rows } = await db.query(queryText);
-
-    const oficinasMap = {};
-
-    rows.forEach((row) => {
-      if (!oficinasMap[row.id]) {
-        oficinasMap[row.id] = {
-          id: row.id,
-          nombre: row.nombre,
-          direccion: row.direccion,
-          telefono: row.telefono,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          rutas: [],
-        };
-      }
-
-      if (row.rutaId && !oficinasMap[row.id].rutas.some(r => r.id === row.rutaId)) {
-        oficinasMap[row.id].rutas.push({
-          id: row.rutaId,
-          nombre: row.rutaNombre,
-        });
-      }
-    });
-
-    const resultRows = Object.values(oficinasMap);
-
-    return resultRows;
-  },
-
-  // Obtener todas las oficinas con rutas y usuarios para admin
-  getAllOficinas: async (page, limit, offset, role, userId) => {
-    const params = [limit, offset];
-
-    const queryText = `
-      SELECT 
-        o.*, 
-        r.id AS "rutaId", 
-        r.nombre AS "rutaNombre"
-      FROM oficinas o
-      LEFT JOIN ruta r ON o.id = r."oficinaId"
-      ORDER BY o."createdAt" DESC
-      LIMIT $1 OFFSET $2;
-    `;
-
-    const { rows } = await db.query(queryText, params);
-
-    const oficinasMap = {};
-
-    rows.forEach((row) => {
-      if (!oficinasMap[row.id]) {
-        oficinasMap[row.id] = {
-          id: row.id,
-          nombre: row.nombre,
-          direccion: row.direccion,
-          telefono: row.telefono,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          rutas: [],
-        };
-      }
-
-      if (row.rutaId && !oficinasMap[row.id].rutas.some(r => r.id === row.rutaId)) {
-        oficinasMap[row.id].rutas.push({
-          id: row.rutaId,
-          nombre: row.rutaNombre,
-        });
-      }
-    });
-
-    const resultRows = Object.values(oficinasMap);
-
-    // Contar total de oficinas
-    let countQuery = `SELECT COUNT(*) AS total FROM oficinas`;
-    const countResult = await db.query(countQuery);
-    const total = parseInt(countResult.rows[0].total);
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      data: resultRows,
-      total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages,
-    };
-  },
-
-  // Obtener todas las oficinas con rutas y usuarios usando solo LEFT JOIN
-  getAll: async (page, limit, offset, role, userId) => {
-    let whereClause = '';
-    const params = [limit, offset];
-
-    // Solo limitar si el rol es administrador_oficina
-    if (role === 'administrador_oficina') {
-      whereClause = `
-        WHERE o.id IN (
-          SELECT "oficinaId"
-          FROM usuariooficinas
-          WHERE "usuarioId" = $3
-        )
+      // Insertar la oficina
+      const queryText = `
+        INSERT INTO oficinas (nombre, direccion, telefono, "createdAt", "updatedAt", public_id)
+        VALUES ($1, $2, $3, NOW(), NOW(), $4) RETURNING *;
       `;
-      params.push(userId);
+      const values = [oficinaData.nombre, oficinaData.direccion, oficinaData.telefono, crypto.randomUUID()];
+      const result = await db.query(queryText, values);
+      const oficina = result.rows[0];
+
+      // Insertar relación en usuariooficinas si hay un userId
+      if (oficinaData.userId) {
+        // Buscar el id interno del usuario usando su public_id
+        const usuarioQuery = `SELECT id FROM usuarios WHERE public_id = $1;`;
+        const usuarioResult = await db.query(usuarioQuery, [oficinaData.userId]);
+        
+        if (usuarioResult.rows.length === 0) {
+          throw new Error('El usuario especificado no existe');
+        }
+
+        const usuarioIdInterno = usuarioResult.rows[0].id;
+
+        await db.query(
+          `INSERT INTO usuariooficinas ("usuarioId", "oficinaId", "createdAt", "updatedAt") VALUES ($1, $2, NOW(), NOW());`,
+          [usuarioIdInterno, oficina.id]
+        );
+      }
+
+      await db.query('COMMIT');
+      return { message: 'Oficina creada exitosamente' };
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
     }
+  }, //Verificado
 
-    const queryText = `
-      SELECT o.*, 
-            r.id AS "rutaId", 
-            r.nombre AS "rutaNombre",
-            u.id AS "usuarioId", 
-            u.nombre AS "usuarioNombre"
-      FROM oficinas o
-      LEFT JOIN ruta r ON o.id = r."oficinaId"
-      LEFT JOIN usuariooficinas uo ON o.id = uo."oficinaId"
-      LEFT JOIN usuarios u ON uo."usuarioId" = u.id
-      ${whereClause}
-      ORDER BY o."createdAt" DESC
-      LIMIT $1 OFFSET $2;
-    `;
+  // Obtener todas las oficinas asociadas al usuario
+  // Si es administrador, retorna todas las oficinas
+  // Si es administrador_oficina, retorna solo las asociadas al usuario
+  getAllOficinas: async (role, userId) => {
+    let queryText = '';
+    let values = [];
 
-    const { rows } = await db.query(queryText, params);
-
-    const oficinasMap = {};
-
-    rows.forEach((row) => {
-      if (!oficinasMap[row.id]) {
-        oficinasMap[row.id] = {
-          id: row.id,
-          nombre: row.nombre,
-          direccion: row.direccion,
-          telefono: row.telefono,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          rutas: [],
-          usuarios: [],
-        };
-      }
-
-      if (row.rutaId && !oficinasMap[row.id].rutas.some(r => r.id === row.rutaId)) {
-        oficinasMap[row.id].rutas.push({
-          id: row.rutaId,
-          nombre: row.rutaNombre,
-        });
-      }
-
-      if (row.usuarioId && !oficinasMap[row.id].usuarios.some(u => u.id === row.usuarioId)) {
-        oficinasMap[row.id].usuarios.push({
-          id: row.usuarioId,
-          nombre: row.usuarioNombre,
-        });
-      }
-    });
-
-    const resultRows = Object.values(oficinasMap);
-
-    // Contar total según el rol
-    let countQuery = `SELECT COUNT(*) AS total FROM oficinas`;
-    let countParams = [];
-
-    if (role === 'administrador_oficina') {
-      countQuery = `
-        SELECT COUNT(DISTINCT o.id) AS total
+    if (role === 'administrador') {
+      // Administrador: obtener todas las oficinas
+      queryText = `
+        SELECT o.* 
         FROM oficinas o
-        JOIN usuariooficinas uo ON o.id = uo."oficinaId"
-        WHERE uo."usuarioId" = $1
+        ORDER BY o."createdAt" DESC;
       `;
-      countParams = [userId];
+    } else if (role === 'administrador_oficina') {
+      // Administrador de oficina: obtener solo sus oficinas
+      queryText = `
+        SELECT o.* 
+        FROM oficinas o
+        INNER JOIN usuariooficinas uo ON o.id = uo."oficinaId"
+        INNER JOIN usuarios u ON uo."usuarioId" = u.id
+        WHERE u.public_id = $1
+        ORDER BY o."createdAt" DESC;
+      `;
+      values.push(userId);
     }
 
-    const countResult = await db.query(countQuery, countParams);
+    const result = await db.query(queryText, values);
+
+    const data = result.rows.map((row) => ({
+      id: row.public_id,
+      nombre: row.nombre,
+      direccion: row.direccion,
+      telefono: row.telefono,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
+
+    return data;
+  }, //Verificado
+
+  // Obtener todas las oficinas con paginación y búsqueda
+  getAll: async (page, limit, offset, search) => {
+    let queryText = `SELECT * FROM oficinas WHERE 1=1`;
+    let values = [];
+
+    if (search && search.trim()) {
+      queryText += ` AND (nombre ILIKE $1 OR direccion ILIKE $1 OR telefono ILIKE $1)`;
+      values.push(`%${search}%`);
+    }
+
+    queryText += ` ORDER BY "createdAt" DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2};`;
+    values.push(limit, offset);
+    
+    const result = await db.query(queryText, values);
+
+    // Obtener total de registros
+    let countQuery = `SELECT COUNT(*) AS total FROM oficinas WHERE 1=1`;
+    let countValues = [];
+
+    if (search && search.trim()) {
+      countQuery += ` AND (nombre ILIKE $1 OR direccion ILIKE $1 OR telefono ILIKE $1)`;
+      countValues.push(`%${search}%`);
+    }
+
+    countQuery += `;`;
+    const countResult = await db.query(countQuery, countValues);
     const total = parseInt(countResult.rows[0].total);
     const totalPages = Math.ceil(total / limit);
 
+    const data = result.rows.map((row) => ({
+      id: row.public_id,
+      nombre: row.nombre,
+      direccion: row.direccion,
+      telefono: row.telefono,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
+
     return {
-      data: resultRows,
+      data: data,
       total,
       page: parseInt(page),
       limit: parseInt(limit),
       totalPages,
     };
-  },
+  }, //Verificado
 
-  // Obtener una oficina por ID con rutas y usuarios asignados
+  // Obtener una oficina por public_id
   getById: async (id) => {
-    const queryText = `
-      SELECT o.*, 
-            r.id AS "rutaId", r.nombre AS "rutaNombre", 
-            u.id AS "usuarioId", u.nombre AS "usuarioNombre"
-      FROM oficinas o
-      LEFT JOIN ruta r ON o.id = r."oficinaId"
-      LEFT JOIN usuariooficinas uo ON o.id = uo."oficinaId"
-      LEFT JOIN usuarios u ON uo."usuarioId" = u.id
-      WHERE o.id = $1;
-    `;
-
+    const queryText = `SELECT * FROM oficinas WHERE public_id = $1;`;
     const { rows } = await db.query(queryText, [id]);
 
-    // Si no hay resultados, devolver null
     if (rows.length === 0) return null;
 
-    console.log(rows)
-
-    // Estructurando los datos para devolver rutas y usuarios
-    const oficina = {
-      id: rows[0].id,
-      nombre: rows[0].nombre,
-      direccion: rows[0].direccion,
-      telefono: rows[0].telefono,
-      createdAt: rows[0].createdAt,
-      updatedAt: rows[0].updatedAt,
-      rutas: [],
-      usuarios: [],
-    };
-
-    // Agregar las rutas al objeto oficina
-    rows.forEach(row => {
-      if (row.rutaId) {
-        oficina.rutas.push({
-          id: row.rutaId,
-          nombre: row.rutaNombre,
-        });
-      }
-    });
-
-    //Agregar usuario al objeto oficina
-    if (rows[0].usuarioId) {
-      oficina.usuarios.push({
-        id: rows[0].usuarioId,
-        nombre: rows[0].usuarioNombre,
-      });
-    }
-
-    return oficina;
-  },
+    return rows[0];
+  }, //Verificado
 
   update: async (id, updateData) => {
-    // Actualizar la oficina
-    const queryText = `
-      UPDATE oficinas 
-      SET nombre = $1, direccion = $2, telefono = $3, "updatedAt" = NOW()
-      WHERE id = $4 RETURNING *;
-    `;
-    const values = [updateData.nombre, updateData.direccion, updateData.telefono, id];
-    const { rows } = await db.query(queryText, values);
-    const oficina = rows[0];
+    try {
+      await db.query('BEGIN');
 
-    // Eliminar relación previa en usuariooficinas
-    await db.query(`DELETE FROM usuariooficinas WHERE "oficinaId" = $1;`, [id]);
+      // Actualizar la oficina
+      const queryText = `
+        UPDATE oficinas 
+        SET nombre = $1, direccion = $2, telefono = $3, "updatedAt" = NOW()
+        WHERE public_id = $4 RETURNING *;
+      `;
+      const values = [updateData.nombre, updateData.direccion, updateData.telefono, id];
+      const result = await db.query(queryText, values);
+      
+      if (result.rows.length === 0) {
+        throw new Error('Oficina no encontrada');
+      }
 
-    // Insertar nueva relación si hay un userId
-    if (updateData.userId) {
-      await db.query(
-        `INSERT INTO usuariooficinas ("usuarioId", "oficinaId","createdAt", "updatedAt") VALUES ($1, $2, NOW(), NOW());`,
-        [updateData.userId, id]
-      );
+      const oficina = result.rows[0];
+
+      // Eliminar relación previa en usuariooficinas
+      await db.query(`DELETE FROM usuariooficinas WHERE "oficinaId" = $1;`, [oficina.id]);
+
+      // Insertar nueva relación si hay un userId
+      if (updateData.userId) {
+        // Buscar el id interno del usuario usando su public_id
+        const usuarioQuery = `SELECT id FROM usuarios WHERE public_id = $1;`;
+        const usuarioResult = await db.query(usuarioQuery, [updateData.userId]);
+        
+        if (usuarioResult.rows.length === 0) {
+          throw new Error('El usuario especificado no existe');
+        }
+
+        const usuarioIdInterno = usuarioResult.rows[0].id;
+
+        await db.query(
+          `INSERT INTO usuariooficinas ("usuarioId", "oficinaId","createdAt", "updatedAt") VALUES ($1, $2, NOW(), NOW());`,
+          [usuarioIdInterno, oficina.id]
+        );
+      }
+
+      await db.query('COMMIT');
+      return {
+        message: 'Oficina actualizada exitosamente',
+      };
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
     }
-
-    return oficina;
-  },
-
-  // Verificar si la oficina tiene rutas asociadas
-  hasRutas: async (id) => {
-    const query = `SELECT COUNT(*) AS total FROM ruta WHERE "oficinaId" = $1;`;
-    const result = await db.query(query, [id]);
-    return parseInt(result.rows[0].total) > 0;
-  },
-
-  // Eliminar relaciones de la oficina en usuariooficinas
-  removeUserRelations: async (id) => {
-    const query = `DELETE FROM usuariooficinas WHERE "oficinaId" = $1;`;
-    await db.query(query, [id]);
-  },
-
-  // Buscar oficinas por nombre con rutas y usuarios
-  searchByName: async (searchTerm, page, limit, offset) => {
-    const queryText = `
-      SELECT o.*, 
-        json_agg(DISTINCT jsonb_build_object('id', r.id, 'nombre', r.nombre)) AS rutas,
-        json_agg(DISTINCT jsonb_build_object('id', u.id, 'nombre', u.nombre)) AS usuarios
-      FROM oficinas o
-      LEFT JOIN ruta r ON o.id = r."oficinaId"
-      LEFT JOIN usuariooficinas uo ON o.id = uo."oficinaId"
-      LEFT JOIN usuarios u ON uo."usuarioId" = u.id
-      WHERE o.nombre ILIKE $1
-      GROUP BY o.id
-      ORDER BY o."createdAt" DESC
-      LIMIT $2 OFFSET $3;
-    `;
-
-    const result = await db.query(queryText, [`%${searchTerm}%`, limit, offset]);
-
-    // Obtener total de oficinas encontradas
-    const countQuery = `SELECT COUNT(*) FROM oficinas WHERE nombre ILIKE $1;`;
-    const countResult = await db.query(countQuery, [`%${searchTerm}%`]);
-
-    const total = Number(countResult.rows[0].count);
-    const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
-
-    return {
-      data: result.rows,
-      total: total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: totalPages
-    };
-  },
+  }, //Verificado
 
   // Eliminar una oficina (solo si no tiene rutas)
   delete: async (id) => {
-    // Verificar si la oficina tiene rutas
-    const hasRutas = await Oficina.hasRutas(id);
-    if (hasRutas) {
-      throw new Error("No se puede eliminar la oficina porque tiene rutas asociadas.");
+    try {
+      await db.query('BEGIN');
+
+      // Buscar la oficina por public_id
+      const oficinaQuery = `SELECT id FROM oficinas WHERE public_id = $1;`;
+      const oficinaResult = await db.query(oficinaQuery, [id]);
+
+      if (oficinaResult.rows.length === 0) {
+        throw new Error('Oficina no encontrada');
+      }
+
+      const oficinaId = oficinaResult.rows[0].id;
+
+      // Verificar si la oficina tiene rutas
+      const rutasQuery = `SELECT COUNT(*) as count FROM ruta WHERE "oficinaId" = $1;`;
+      const rutasResult = await db.query(rutasQuery, [oficinaId]);
+      const rutasCount = parseInt(rutasResult.rows[0].count);
+
+      if (rutasCount > 0) {
+        throw new Error('No se puede eliminar la oficina porque tiene rutas asociadas');
+      }
+
+      // Eliminar la relación entre la oficina y el usuario
+      await db.query(`DELETE FROM usuariooficinas WHERE "oficinaId" = $1;`, [oficinaId]);
+
+      // Eliminar la oficina
+      await db.query(`DELETE FROM oficinas WHERE public_id = $1;`, [id]);
+
+      await db.query('COMMIT');
+
+      return { message: "Oficina eliminada correctamente." };
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
     }
-
-    // Eliminar relaciones con usuarios
-    await Oficina.removeUserRelations(id);
-
-    // Eliminar la oficina
-    const query = `DELETE FROM oficinas WHERE id = $1;`;
-    await db.query(query, [id]);
-
-    return { message: "Oficina eliminada correctamente." };
-  }
+  } //Verificado
 });
